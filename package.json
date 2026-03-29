@@ -1,0 +1,20 @@
+{
+  "name": "prof",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.6.3",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w apps/web",
+    "dev:server": "npm run dev -w apps/server",
+    "build:web": "npm run build -w apps/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "elevenlabs:pull-agent": "node scripts/elevenlabs-agent.mjs pull",
+    "elevenlabs:build-agent": "node scripts/elevenlabs-agent.mjs build",
+    "elevenlabs:push-agent": "node scripts/elevenlabs-agent.mjs push",
+    "elevenlabs:smoke-agent": "node scripts/elevenlabs-agent.mjs smoke"
+  }
+}

@@ -1,0 +1,294 @@
+:root {
+  --bg: #fbfaf7;
+  --panel: #fcf8f2;
+  --panel-strong: #fffdfa;
+  --composer-bg: #fffefb;
+  --border: rgba(72, 42, 22, 0.12);
+  --text: #21140d;
+  --muted: #6a5447;
+  --accent: #bf5b2c;
+  --accent-strong: #8a3715;
+  --shadow: 0 24px 60px rgba(73, 35, 14, 0.14);
+  --font-sans: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text);
+  background: var(--bg);
+}
+
+.learn-page {
+  position: relative;
+}
+
+.learn-workspace {
+  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.learn-pane--secondary {
+  border-left: none;
+}
+
+.learn-scroll {
+  min-width: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(72, 42, 22, 0.12) transparent;
+}
+
+.learn-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.learn-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.learn-scroll::-webkit-scrollbar-thumb {
+  background: rgba(72, 42, 22, 0.12);
+  border-radius: 999px;
+}
+
+.learn-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(72, 42, 22, 0.18);
+}
+
+@media (min-width: 960px) {
+  .learn-scroll {
+    margin-right: -4px;
+  }
+}
+
+@media (max-width: 959px) {
+  .learn-page {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .learn-workspace {
+    min-height: auto;
+    height: auto !important;
+    overflow: visible !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .learn-pane {
+    padding: 20px 16px 22px !important;
+  }
+
+  .learn-pane--secondary {
+    border-top: 1px solid var(--border);
+  }
+
+  .learn-scroll {
+    padding-right: 0;
+    overflow: visible;
+  }
+
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+.markdown-content {
+  color: #000;
+  line-height: 1.65;
+  font-size: 1.02rem;
+  overflow-wrap: anywhere;
+}
+
+.markdown-content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content :where(h1, h2, h3, h4, h5, h6) {
+  margin: 1.4em 0 0.55em;
+  line-height: 1.2;
+  color: inherit;
+}
+
+.markdown-content h1 {
+  font-size: 1.65rem;
+}
+
+.markdown-content h2 {
+  font-size: 1.4rem;
+}
+
+.markdown-content h3 {
+  font-size: 1.2rem;
+}
+
+.markdown-content p,
+.markdown-content ul,
+.markdown-content ol,
+.markdown-content blockquote,
+.markdown-content pre,
+.markdown-content table,
+.markdown-content hr {
+  margin: 0 0 0.65rem;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.35rem;
+}
+
+.markdown-content li + li {
+  margin-top: 0.35rem;
+}
+
+.markdown-content li > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content li > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content li > p {
+  margin: 0.35rem 0;
+}
+
+.markdown-content li > p:only-child {
+  display: inline;
+  margin: 0;
+}
+
+.markdown-content li > ul,
+.markdown-content li > ol {
+  margin-top: 0.45rem;
+}
+
+.markdown-content a {
+  color: inherit;
+  text-decoration-color: currentColor;
+  text-underline-offset: 0.14em;
+}
+
+.markdown-content a:hover {
+  text-decoration-color: currentColor;
+}
+
+.markdown-content code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.92em;
+  padding: 0.12em 0.38em;
+  border-radius: 6px;
+  background: rgba(72, 42, 22, 0.08);
+}
+
+.markdown-content pre {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border: 1px solid rgba(72, 42, 22, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 247, 239, 0.9);
+}
+
+.markdown-content pre code {
+  display: block;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.95em;
+}
+
+.markdown-content blockquote {
+  padding-left: 1rem;
+  border-left: 3px solid rgba(191, 91, 44, 0.28);
+  color: var(--muted);
+}
+
+.markdown-content hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.markdown-content table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgba(72, 42, 22, 0.1);
+  text-align: left;
+}
+
+.markdown-content th {
+  background: rgba(255, 247, 239, 0.9);
+  font-weight: 600;
+}
+
+.markdown-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+.markdown-content input[type="checkbox"] {
+  margin-right: 0.5rem;
+}
+
+.markdown-content--compact {
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.markdown-content--compact h1 {
+  font-size: 1.3rem;
+}
+
+.markdown-content--compact h2 {
+  font-size: 1.14rem;
+}
+
+.markdown-content--compact h3 {
+  font-size: 1rem;
+}
+
+.markdown-content--compact :where(h1, h2, h3, h4, h5, h6) {
+  margin: 1.1em 0 0.45em;
+}
+
+.markdown-content--compact p,
+.markdown-content--compact ul,
+.markdown-content--compact ol,
+.markdown-content--compact blockquote,
+.markdown-content--compact pre,
+.markdown-content--compact table,
+.markdown-content--compact hr {
+  margin-bottom: 0.55rem;
+}

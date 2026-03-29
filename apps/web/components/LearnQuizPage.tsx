@@ -1,0 +1,611 @@
+"use client";
+
+import type { QuizBlock } from "@prof/contracts";
+import Link from "next/link";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+
+import type { LearnSessionSnapshot } from "../lib/learn-session";
+import { readLearnSessionSnapshot, writeLearnSessionSnapshot } from "../lib/learn-session";
+import { buildLearnHref } from "../lib/learn-route";
+import {
+  createEmptyQuizProgress,
+  ensureQuizProgress,
+  getQuestionKindLabel,
+  gradeQuiz,
+  questionHasAnswer,
+  type QuizAnswerState,
+  type QuizProgress,
+} from "../lib/quiz";
+
+type LearnQuizPageProps = {
+  sessionId: string;
+};
+
+export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
+  const [snapshot, setSnapshot] = useState<LearnSessionSnapshot | null>(null);
+  const [quiz, setQuiz] = useState<QuizBlock | null>(null);
+  const [topicId, setTopicId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<QuizProgress | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    const nextSnapshot = readLearnSessionSnapshot(sessionId);
+    const nextQuiz = getGeneratedQuiz(nextSnapshot);
+    const nextTopicId = nextSnapshot?.generatedQuizTopicId ?? nextSnapshot?.generatedTopicId ?? null;
+
+    setSnapshot(nextSnapshot);
+    setQuiz(nextQuiz);
+    setTopicId(nextTopicId);
+    setProgress(nextQuiz ? ensureQuizProgress(nextQuiz, nextSnapshot?.quizProgress, nextTopicId) : null);
+    setCurrentQuestionIndex(0);
+    setIsLoaded(true);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!progress) {
+      return;
+    }
+
+    setSnapshot((current) => {
+      if (!current) {
+        return current;
+      }
+
+      let nextSnapshot: LearnSessionSnapshot = {
+        ...current,
+        quizProgress: progress,
+      };
+
+      if (quiz && topicId && progress.submitted) {
+        const result = gradeQuiz(quiz, progress);
+        const nextResults = { ...(current.quizResultsByTopic ?? {}) };
+        nextResults[topicId] = result.percent;
+        nextSnapshot = {
+          ...nextSnapshot,
+          quizResultsByTopic: nextResults,
+        };
+      }
+
+      writeLearnSessionSnapshot(sessionId, nextSnapshot);
+      return nextSnapshot;
+    });
+  }, [progress, quiz, sessionId, topicId]);
+
+  const result = useMemo(() => {
+    if (!quiz || !progress || !progress.submitted) {
+      return null;
+    }
+
+    return gradeQuiz(quiz, progress);
+  }, [progress, quiz]);
+
+  if (!isLoaded) {
+    return null;
+  }
+
+  if (!snapshot || !quiz || !progress) {
+    return (
+      <main style={styles.page}>
+        <section style={styles.shell}>
+          <header style={styles.header}>
+            <h1 style={styles.title}>Quiz</h1>
+          </header>
+          <div style={styles.card}>
+            <p style={styles.bodyText}>Quiz is not ready in this session yet.</p>
+            <Link href={buildLearnHref({ sessionId, goal: "", preferredBlockType: "", useWebSearch: false, autoStartAction: null })} style={styles.link}>
+              Back to lesson
+            </Link>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  const activeQuiz = quiz;
+  const activeProgress = progress;
+  const currentQuestion = activeQuiz.questions[currentQuestionIndex];
+  const currentAnswer = activeProgress.answers[currentQuestionIndex];
+  const answeredCount = activeQuiz.questions.filter((question, index) =>
+    questionHasAnswer(question, activeProgress.answers[index]),
+  ).length;
+  const lessonHref = buildLearnHref({
+    sessionId,
+    goal: "",
+    preferredBlockType: "",
+    useWebSearch: false,
+    autoStartAction: null,
+  });
+
+  function updateAnswer(nextAnswer: QuizAnswerState) {
+    setProgress((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const nextAnswers = current.answers.map((answer, index) =>
+        index === currentQuestionIndex ? nextAnswer : answer,
+      );
+
+      return {
+        ...current,
+        submitted: false,
+        answers: nextAnswers,
+      };
+    });
+  }
+
+  function submitQuiz() {
+    setProgress((current) => (current ? { ...current, submitted: true } : current));
+  }
+
+  function restartQuiz() {
+    setProgress(createEmptyQuizProgress(activeQuiz, topicId));
+    setCurrentQuestionIndex(0);
+  }
+
+  return (
+    <main style={styles.page}>
+      <section style={styles.shell}>
+        <header style={styles.header}>
+          <div style={styles.headerCopy}>
+            <h1 style={styles.title}>Quiz</h1>
+            <p style={styles.metaText}>{activeQuiz.title}</p>
+          </div>
+          <Link href={lessonHref} style={styles.link}>
+            Back to lesson
+          </Link>
+        </header>
+
+        {!activeProgress.submitted ? (
+          <section style={styles.card}>
+            <div style={styles.progressRow}>
+              <span style={styles.progressText}>
+                Question {currentQuestionIndex + 1} of {activeQuiz.questions.length}
+              </span>
+              <span style={styles.progressText}>{answeredCount} answered</span>
+            </div>
+
+            <div style={styles.questionHeader}>
+              <p style={styles.questionKind}>{getQuestionKindLabel(currentQuestion)}</p>
+              <h2 style={styles.questionPrompt}>{currentQuestion.prompt}</h2>
+            </div>
+
+            <div style={styles.answerArea}>
+              {currentQuestion.kind === "multiple_choice" ? (
+                <div style={styles.optionList}>
+                  {currentQuestion.choices.map((choice, index) => {
+                    const selected = currentAnswer?.selectedIndex === index;
+
+                    return (
+                      <button
+                        key={choice}
+                        type="button"
+                        style={{
+                          ...styles.optionButton,
+                          ...(selected ? styles.optionButtonSelected : null),
+                        }}
+                        onClick={() =>
+                          updateAnswer({
+                            selectedIndex: index,
+                            selectedIndexes: [],
+                            text: "",
+                          })
+                        }
+                      >
+                        {choice}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {currentQuestion.kind === "multiple_select" ? (
+                <div style={styles.optionList}>
+                  {currentQuestion.choices.map((choice, index) => {
+                    const selected = currentAnswer?.selectedIndexes.includes(index) ?? false;
+
+                    return (
+                      <label
+                        key={choice}
+                        style={{
+                          ...styles.checkboxRow,
+                          ...(selected ? styles.checkboxRowSelected : null),
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={(event) => {
+                            const selectedIndexes = new Set(currentAnswer?.selectedIndexes ?? []);
+
+                            if (event.target.checked) {
+                              selectedIndexes.add(index);
+                            } else {
+                              selectedIndexes.delete(index);
+                            }
+
+                            updateAnswer({
+                              selectedIndex: null,
+                              selectedIndexes: Array.from(selectedIndexes).sort((left, right) => left - right),
+                              text: "",
+                            });
+                          }}
+                        />
+                        <span>{choice}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {currentQuestion.kind === "short_answer" ? (
+                <textarea
+                  rows={5}
+                  value={currentAnswer?.text ?? ""}
+                  onChange={(event) =>
+                    updateAnswer({
+                      selectedIndex: null,
+                      selectedIndexes: [],
+                      text: event.target.value,
+                    })
+                  }
+                  placeholder="Type your answer"
+                  style={styles.textarea}
+                />
+              ) : null}
+            </div>
+
+            <div style={styles.navRow}>
+              <button
+                type="button"
+                style={{
+                  ...styles.navButton,
+                  ...(currentQuestionIndex === 0 ? styles.navButtonDisabled : null),
+                }}
+                onClick={() => setCurrentQuestionIndex((current) => Math.max(0, current - 1))}
+                disabled={currentQuestionIndex === 0}
+              >
+                Previous
+              </button>
+
+              {currentQuestionIndex < activeQuiz.questions.length - 1 ? (
+                <button
+                  type="button"
+                  style={{
+                    ...styles.navButton,
+                    ...styles.navButtonPrimary,
+                  }}
+                  onClick={() =>
+                    setCurrentQuestionIndex((current) => Math.min(activeQuiz.questions.length - 1, current + 1))
+                  }
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  style={{
+                    ...styles.navButton,
+                    ...styles.navButtonPrimary,
+                  }}
+                  onClick={submitQuiz}
+                >
+                  Finish
+                </button>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {activeProgress.submitted && result ? (
+          <section style={styles.resultsShell}>
+            <div style={styles.card}>
+              <h2 style={styles.resultTitle}>
+                {result.correctCount}/{result.totalCount} correct
+              </h2>
+              <p style={styles.resultPercent}>{result.percent}%</p>
+              <div style={styles.resultActions}>
+                <button
+                  type="button"
+                  style={{
+                    ...styles.navButton,
+                    ...styles.navButtonPrimary,
+                  }}
+                  onClick={restartQuiz}
+                >
+                  Retake
+                </button>
+                <Link href={lessonHref} style={styles.link}>
+                  Back to lesson
+                </Link>
+              </div>
+            </div>
+
+            <div style={styles.reviewList}>
+              {result.questions.map((entry, index) => (
+                <article
+                  key={`${entry.question.kind}-${index}`}
+                  style={{
+                    ...styles.reviewCard,
+                    ...(entry.correct ? styles.reviewCardCorrect : styles.reviewCardWrong),
+                  }}
+                >
+                  <p style={styles.reviewMeta}>
+                    Question {index + 1} • {getQuestionKindLabel(entry.question)}
+                  </p>
+                  <h3 style={styles.reviewPrompt}>{entry.question.prompt}</h3>
+                  <p style={styles.reviewText}>Your answer: {entry.userAnswerLabel}</p>
+                  <p style={styles.reviewText}>Correct answer: {entry.correctAnswerLabel}</p>
+                  {entry.explanation ? <p style={styles.reviewExplanation}>{entry.explanation}</p> : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </section>
+    </main>
+  );
+}
+
+function getGeneratedQuiz(snapshot: LearnSessionSnapshot | null): QuizBlock | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  if (snapshot.generatedQuiz) {
+    return snapshot.generatedQuiz;
+  }
+
+  return snapshot.generatedBlock?.type === "quiz" ? snapshot.generatedBlock : null;
+}
+
+const styles: Record<string, CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    background: "var(--bg)",
+    padding: "32px 20px 56px",
+  },
+  shell: {
+    width: "100%",
+    maxWidth: "760px",
+    margin: "0 auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: "18px",
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "16px",
+    flexWrap: "wrap",
+  },
+  headerCopy: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+  title: {
+    margin: 0,
+    fontSize: "1.28rem",
+    lineHeight: 1.1,
+    color: "#2c1c14",
+  },
+  metaText: {
+    margin: 0,
+    fontSize: "0.9rem",
+    lineHeight: 1.5,
+    color: "#6a5447",
+  },
+  link: {
+    color: "#7f3213",
+    textDecoration: "none",
+    fontSize: "0.92rem",
+    fontWeight: 500,
+  },
+  card: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "18px",
+    padding: "24px 22px",
+    borderRadius: "18px",
+    background: "rgba(255, 253, 250, 0.92)",
+    border: "1px solid rgba(72, 42, 22, 0.08)",
+    boxShadow: "0 18px 44px rgba(101, 68, 45, 0.08)",
+  },
+  bodyText: {
+    margin: 0,
+    fontSize: "0.96rem",
+    lineHeight: 1.7,
+    color: "#45342b",
+  },
+  progressRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+    flexWrap: "wrap",
+  },
+  progressText: {
+    fontSize: "0.84rem",
+    lineHeight: 1.4,
+    color: "#6a5447",
+  },
+  questionHeader: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  },
+  questionKind: {
+    margin: 0,
+    fontSize: "0.8rem",
+    lineHeight: 1.4,
+    fontWeight: 600,
+    letterSpacing: "0.02em",
+    textTransform: "uppercase",
+    color: "#8a3715",
+  },
+  questionPrompt: {
+    margin: 0,
+    fontSize: "1.12rem",
+    lineHeight: 1.45,
+    color: "#2c1c14",
+  },
+  answerArea: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  },
+  optionList: {
+    display: "grid",
+    gap: "10px",
+  },
+  optionButton: {
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "rgba(72, 42, 22, 0.12)",
+    borderRadius: "14px",
+    background: "#fffdfa",
+    color: "#45342b",
+    padding: "14px 16px",
+    textAlign: "left",
+    fontSize: "0.95rem",
+    lineHeight: 1.55,
+    cursor: "pointer",
+  },
+  optionButtonSelected: {
+    borderColor: "rgba(191, 91, 44, 0.34)",
+    background: "rgba(255, 244, 235, 0.92)",
+    color: "#7f3213",
+  },
+  checkboxRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "12px",
+    padding: "14px 16px",
+    borderRadius: "14px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "rgba(72, 42, 22, 0.12)",
+    background: "#fffdfa",
+    color: "#45342b",
+    fontSize: "0.95rem",
+    lineHeight: 1.55,
+  },
+  checkboxRowSelected: {
+    borderColor: "rgba(191, 91, 44, 0.34)",
+    background: "rgba(255, 244, 235, 0.92)",
+  },
+  textarea: {
+    width: "100%",
+    minHeight: "132px",
+    borderRadius: "14px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "rgba(72, 42, 22, 0.12)",
+    background: "#fffdfa",
+    padding: "14px 16px",
+    resize: "vertical",
+    font: "inherit",
+    lineHeight: 1.6,
+    color: "#45342b",
+  },
+  navRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+    flexWrap: "wrap",
+  },
+  navButton: {
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "rgba(72, 42, 22, 0.12)",
+    borderRadius: "999px",
+    background: "#fffdfa",
+    color: "#5a453a",
+    padding: "11px 16px",
+    cursor: "pointer",
+    fontSize: "0.92rem",
+    fontWeight: 500,
+  },
+  navButtonPrimary: {
+    background: "rgba(191, 91, 44, 0.12)",
+    borderColor: "rgba(191, 91, 44, 0.32)",
+    color: "#7f3213",
+  },
+  navButtonDisabled: {
+    opacity: 0.5,
+    cursor: "not-allowed",
+  },
+  resultsShell: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+  },
+  resultTitle: {
+    margin: 0,
+    fontSize: "1.4rem",
+    lineHeight: 1.2,
+    color: "#2c1c14",
+  },
+  resultPercent: {
+    margin: 0,
+    fontSize: "2rem",
+    lineHeight: 1,
+    fontWeight: 700,
+    color: "#7f3213",
+  },
+  resultActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "14px",
+    flexWrap: "wrap",
+  },
+  reviewList: {
+    display: "grid",
+    gap: "12px",
+  },
+  reviewCard: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    padding: "18px",
+    borderRadius: "16px",
+    border: "1px solid rgba(72, 42, 22, 0.08)",
+    background: "rgba(255, 253, 250, 0.88)",
+  },
+  reviewCardCorrect: {
+    borderColor: "rgba(62, 124, 88, 0.2)",
+    background: "rgba(246, 252, 248, 0.92)",
+  },
+  reviewCardWrong: {
+    borderColor: "rgba(191, 91, 44, 0.2)",
+    background: "rgba(255, 249, 245, 0.92)",
+  },
+  reviewMeta: {
+    margin: 0,
+    fontSize: "0.8rem",
+    lineHeight: 1.4,
+    color: "#6a5447",
+  },
+  reviewPrompt: {
+    margin: 0,
+    fontSize: "1rem",
+    lineHeight: 1.45,
+    color: "#2c1c14",
+  },
+  reviewText: {
+    margin: 0,
+    fontSize: "0.92rem",
+    lineHeight: 1.6,
+    color: "#45342b",
+  },
+  reviewExplanation: {
+    margin: 0,
+    fontSize: "0.88rem",
+    lineHeight: 1.6,
+    color: "#6a5447",
+  },
+};

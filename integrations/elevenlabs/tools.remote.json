@@ -1,0 +1,97 @@
+{
+  "tools": [
+    {
+      "id": "tool_1201kmfrtw1wf72tyvgjxr95rpga",
+      "tool_config": {
+        "type": "client",
+        "name": "request_reasoning",
+        "description": "Create or update Prof Learn workspace content when the learner asks for new material or revisions.",
+        "response_timeout_secs": 60,
+        "disable_interruptions": true,
+        "force_pre_tool_speech": false,
+        "assignments": [],
+        "tool_call_sound": null,
+        "tool_call_sound_behavior": "auto",
+        "tool_error_handling_mode": "auto",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "message",
+            "requestType"
+          ],
+          "description": "",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "A concise restatement of the learner request for Prof to execute.",
+              "enum": null,
+              "is_system_provided": false,
+              "dynamic_variable": "",
+              "constant_value": ""
+            },
+            "requestType": {
+              "type": "string",
+              "description": "Whether Prof should create new content, update content, or answer using current materials.",
+              "enum": [
+                "new_content",
+                "update_content",
+                "general_query"
+              ],
+              "is_system_provided": false,
+              "dynamic_variable": "",
+              "constant_value": ""
+            },
+            "updateTarget": {
+              "type": "string",
+              "description": "The Learn panel object to update when known.",
+              "enum": [
+                "lesson",
+                "topic_list",
+                "topic",
+                "quiz",
+                "flashcards",
+                "plan",
+                "all",
+                "unknown"
+              ],
+              "is_system_provided": false,
+              "dynamic_variable": "",
+              "constant_value": ""
+            },
+            "preferredBlockType": {
+              "type": "string",
+              "description": "Preferred block type when explicitly requested.",
+              "enum": [
+                "lesson",
+                "quiz",
+                "flashcards",
+                "essay_prompt",
+                "follow_up_question"
+              ],
+              "is_system_provided": false,
+              "dynamic_variable": "",
+              "constant_value": ""
+            }
+          }
+        },
+        "expects_response": true,
+        "dynamic_variables": {
+          "dynamic_variable_placeholders": {}
+        },
+        "execution_mode": "immediate"
+      },
+      "access_info": {
+        "is_creator": true,
+        "creator_name": "timsinadipesh77@gmail.com",
+        "creator_email": "timsinadipesh77@gmail.com",
+        "role": "admin"
+      },
+      "usage_stats": {
+        "total_calls": 1,
+        "avg_latency_secs": 0.3
+      }
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false
+}
