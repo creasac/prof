@@ -7,4 +7,3 @@ dist
 .env.*.local
 npm-debug.log*
 /.guide/
-docs/
