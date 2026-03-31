@@ -1,11 +1,14 @@
 "use client";
 import {
   appConfigSchema,
+  formatCourseVersionSegment,
   lessonQuizResponseSchema,
   reasoningPlanStreamEventSchema,
   reasoningTopicBlockStreamEventSchema,
   voiceSessionResponseSchema,
   type AppConfig,
+  type CourseRef,
+  type CourseSnapshot,
   type CoursePlan,
   type Flashcard,
   type GroundingSource,
@@ -40,11 +43,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { authClient } from "../lib/auth-client";
 import { fetchApi } from "../lib/api";
+import { buildCourseHref } from "../lib/course-route";
+import { loadRemoteCourse } from "../lib/course-api";
 import { readLearnSessionSnapshot, writeLearnSessionSnapshot } from "../lib/learn-session";
-import { loadRemoteLearnCourse, loadRemoteLearnSession, saveRemoteLearnSession } from "../lib/learn-session-api";
+import { loadRemoteLearnSession, saveRemoteLearnSession } from "../lib/learn-session-api";
 import { buildLearnHref, buildLearnQuizHref, createLearnSessionId, parseLearnRouteState } from "../lib/learn-route";
 import { createElevenLabsVoiceSession, type VoiceSessionHandle, type VoiceToolCallPayload } from "../lib/voice/elevenlabs";
 import type { QuizProgress } from "../lib/quiz";
+import Link from "next/link";
 import { PlannerView } from "./PlannerUi";
 import { PromptComposer } from "./PromptComposer";
 import { BlockView, Icon, IconText } from "./TutorUi";
@@ -449,16 +455,51 @@ function updateTopicArtifacts(
   };
 }
 
-function createSeededSessionSnapshot(snapshot: LearnSessionSnapshot, courseId: string): LearnSessionSnapshot {
+function createCourseRef(input: {
+  courseId: string;
+  ownerUsername: string;
+  courseSlug: string;
+  versionNumber: number;
+  title: string;
+}): CourseRef {
   return {
-    ...snapshot,
-    courseId,
+    courseId: input.courseId,
+    ownerUsername: input.ownerUsername,
+    courseSlug: input.courseSlug,
+    versionNumber: input.versionNumber,
+    title: input.title,
+  };
+}
+
+function createSeededSessionSnapshot(snapshot: CourseSnapshot, course: CourseRef): LearnSessionSnapshot {
+  return {
+    courseId: course.courseId,
+    course,
+    goal: snapshot.goal,
+    plannerInput: "",
+    preferredBlockType: "",
+    useWebSearch: false,
+    plan: snapshot.plan,
+    planClarification: null,
+    planSources: snapshot.planSources,
+    selectedTopicId: snapshot.selectedTopicId,
+    generatedBlock: snapshot.generatedBlock,
+    generatedTopicId: snapshot.generatedTopicId,
+    generatedQuiz: snapshot.generatedQuiz,
+    generatedQuizTopicId: snapshot.generatedQuizTopicId,
+    generatedQuizError: null,
+    quizProgress: null,
+    quizResultsByTopic: {},
+    topicArtifacts: snapshot.topicArtifacts ?? {},
+    blockSources: snapshot.blockSources,
     chatMessages: [],
     liveMessages: [],
     liveInputDraft: "",
     liveOutputDraft: "",
     inputTranscript: "",
     outputTranscript: "",
+    leftPanePercent: DEFAULT_LEFT_PANE_PERCENT,
+    learnPanelCollapsed: false,
     liveGoal: null,
   };
 }
@@ -526,7 +567,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     ? [routeState.autoStartAction, routeState.goal, routeState.preferredBlockType, routeState.useWebSearch].join("|")
     : null;
 
-  const [courseId, setCourseId] = useState<string | null>(() => routeState.courseId ?? sessionId ?? null);
+  const [course, setCourse] = useState<CourseRef | null>(null);
   const [goal, setGoal] = useState(() => routeState.goal);
   const [plannerInput, setPlannerInput] = useState(() => (shouldPrefillPlannerInput ? routeState.goal : ""));
   const [preferredBlockType, setPreferredBlockType] = useState<TutorBlockType | "">(
@@ -692,7 +733,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
       if (!sessionId) {
         if (!cancelled) {
-          setCourseId(routeState.courseId ?? null);
+          setCourse(null);
           setIsSessionHydrated(true);
         }
         return;
@@ -716,11 +757,24 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         }
       }
 
-      if (!snapshot && routeState.courseId && authSession?.user?.id) {
+      if (!snapshot && routeState.courseOwnerUsername && routeState.courseSlug) {
         try {
-          const remoteCourse = await loadRemoteLearnCourse(routeState.courseId);
+          const remoteCourse = await loadRemoteCourse(
+            routeState.courseOwnerUsername,
+            routeState.courseSlug,
+            routeState.courseVersionNumber ? formatCourseVersionSegment(routeState.courseVersionNumber) : null,
+          );
           if (!cancelled && remoteCourse) {
-            snapshot = createSeededSessionSnapshot(remoteCourse.snapshot, remoteCourse.courseId);
+            snapshot = createSeededSessionSnapshot(
+              remoteCourse.requestedVersion.snapshot,
+              createCourseRef({
+                courseId: remoteCourse.courseId,
+                ownerUsername: remoteCourse.ownerUsername,
+                courseSlug: remoteCourse.courseSlug,
+                versionNumber: remoteCourse.requestedVersion.versionNumber,
+                title: remoteCourse.requestedVersion.title,
+              }),
+            );
           }
         } catch (error) {
           console.error(error);
@@ -732,7 +786,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       }
 
       if (snapshot) {
-        setCourseId(snapshot.courseId ?? routeState.courseId ?? sessionId ?? null);
+        setCourse(snapshot.course ?? null);
         setGoal(snapshot.goal);
         setPlannerInput(snapshot.plannerInput);
         setPreferredBlockType(snapshot.preferredBlockType);
@@ -771,7 +825,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         setIsLearnPanelCollapsed(snapshot.learnPanelCollapsed ?? false);
         liveGoalRef.current = snapshot.liveGoal;
       } else {
-        setCourseId(routeState.courseId ?? sessionId ?? null);
+        setCourse(null);
         setGoal(routeState.goal);
         setPlannerInput(shouldPrefillPlannerInput ? routeState.goal : "");
         setPreferredBlockType(routeState.preferredBlockType);
@@ -816,7 +870,9 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }, [
     authSession?.user?.id,
     isAuthPending,
-    routeState.courseId,
+    routeState.courseOwnerUsername,
+    routeState.courseSlug,
+    routeState.courseVersionNumber,
     routeState.goal,
     routeState.preferredBlockType,
     routeState.useWebSearch,
@@ -853,7 +909,9 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     router.replace(
       buildLearnHref({
         sessionId,
-        courseId,
+        courseOwnerUsername: course?.ownerUsername ?? routeState.courseOwnerUsername,
+        courseSlug: course?.courseSlug ?? routeState.courseSlug,
+        courseVersionNumber: course?.versionNumber ?? routeState.courseVersionNumber,
         goal: "",
         preferredBlockType: "",
         useWebSearch: false,
@@ -881,7 +939,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     routeState.preferredBlockType,
     routeState.useWebSearch,
     router,
-    courseId,
+    course,
+    routeState.courseOwnerUsername,
+    routeState.courseSlug,
+    routeState.courseVersionNumber,
     sessionId,
   ]);
 
@@ -891,7 +952,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     const snapshot: LearnSessionSnapshot = {
-      courseId,
+      courseId: course?.courseId ?? null,
+      course,
       goal,
       plannerInput,
       preferredBlockType,
@@ -930,9 +992,24 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     remoteSaveTimeoutRef.current = setTimeout(() => {
-      void saveRemoteLearnSession(sessionId, snapshot).catch((error) => {
-        console.error(error);
-      });
+      void saveRemoteLearnSession(sessionId, snapshot)
+        .then((persistedSession) => {
+          writeLearnSessionSnapshot(sessionId, persistedSession.snapshot);
+          const nextCourse = persistedSession.snapshot.course ?? null;
+          setCourse((current) => {
+            const currentKey = current
+              ? `${current.courseId}:${current.ownerUsername}:${current.courseSlug}:${current.versionNumber}:${current.title}`
+              : "";
+            const nextKey = nextCourse
+              ? `${nextCourse.courseId}:${nextCourse.ownerUsername}:${nextCourse.courseSlug}:${nextCourse.versionNumber}:${nextCourse.title}`
+              : "";
+
+            return currentKey === nextKey ? current : nextCourse;
+          });
+        })
+        .catch((error) => {
+          console.error(error);
+        });
     }, 500);
 
     return () => {
@@ -945,7 +1022,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     authSession?.user?.id,
     blockSources,
     chatMessages,
-    courseId,
+    course,
     generatedBlock,
     generatedTopicId,
     generatedQuiz,
@@ -2713,7 +2790,9 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     router.replace(
       buildLearnHref({
         sessionId: nextSessionId,
-        courseId: courseId ?? nextSessionId,
+        courseOwnerUsername: course?.ownerUsername ?? routeState.courseOwnerUsername,
+        courseSlug: course?.courseSlug ?? routeState.courseSlug,
+        courseVersionNumber: course?.versionNumber ?? routeState.courseVersionNumber,
         goal: nextGoal,
         preferredBlockType,
         useWebSearch,
@@ -2866,6 +2945,17 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         <article className="learn-pane" id="learn-roadmap-pane" style={styles.panel}>
           <div style={styles.panelHeader}>
             <h1 style={styles.sectionTitle}>Learn</h1>
+            {course ? (
+              <Link
+                href={buildCourseHref({
+                  username: course.ownerUsername,
+                  courseSlug: course.courseSlug,
+                })}
+                style={styles.headerLink}
+              >
+                @{course.ownerUsername}/{course.courseSlug}
+              </Link>
+            ) : null}
           </div>
 
           <div className="learn-scroll" style={styles.panelBody}>
@@ -3402,6 +3492,16 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1.1,
     fontWeight: 500,
     letterSpacing: "-0.02em",
+  },
+  headerLink: {
+    color: "#8a3715",
+    fontSize: "0.82rem",
+    textDecoration: "none",
+    border: "1px solid rgba(191, 91, 44, 0.16)",
+    background: "rgba(255, 248, 242, 0.72)",
+    padding: "6px 10px",
+    borderRadius: "999px",
+    whiteSpace: "nowrap",
   },
   panelHeaderActions: {
     display: "flex",

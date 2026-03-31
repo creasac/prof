@@ -1,9 +1,11 @@
-import type { TutorBlockType } from "@prof/contracts";
+import { createPublicId, formatCourseVersionSegment, parseCourseVersionSegment, type TutorBlockType } from "@prof/contracts";
 
 export type TutorLaunchAction = "generate" | "live" | null;
 
 export type LearnRouteState = {
-  courseId: string | null;
+  courseOwnerUsername: string | null;
+  courseSlug: string | null;
+  courseVersionNumber: number | null;
   goal: string;
   preferredBlockType: TutorBlockType | "";
   useWebSearch: boolean;
@@ -41,10 +43,14 @@ function readParam(searchParams: SearchParamsLike, name: string) {
 export function parseLearnRouteState(searchParams: SearchParamsLike): LearnRouteState {
   const rawPreferredBlockType = readParam(searchParams, "format") ?? "";
   const rawAutoStartAction = readParam(searchParams, "autostart");
-  const rawCourseId = readParam(searchParams, "course");
+  const rawCourseOwnerUsername = readParam(searchParams, "owner");
+  const rawCourseSlug = readParam(searchParams, "course");
+  const rawCourseVersion = readParam(searchParams, "version");
 
   return {
-    courseId: rawCourseId?.trim() ? rawCourseId : null,
+    courseOwnerUsername: rawCourseOwnerUsername?.trim() ? rawCourseOwnerUsername.trim().toLowerCase() : null,
+    courseSlug: rawCourseSlug?.trim() ? rawCourseSlug.trim().toLowerCase() : null,
+    courseVersionNumber: parseCourseVersionSegment(rawCourseVersion),
     goal: readParam(searchParams, "goal") ?? "",
     preferredBlockType: VALID_BLOCK_TYPES.has(rawPreferredBlockType as TutorBlockType)
       ? (rawPreferredBlockType as TutorBlockType)
@@ -56,18 +62,19 @@ export function parseLearnRouteState(searchParams: SearchParamsLike): LearnRoute
 }
 
 export function createLearnSessionId() {
-  if (typeof globalThis.crypto !== "undefined" && typeof globalThis.crypto.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
-  }
-
-  return `learn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return createPublicId(10);
 }
 
 export function buildLearnHref(state: LearnHrefState) {
   const params = new URLSearchParams();
 
-  if (state.courseId && (!state.sessionId || state.courseId !== state.sessionId)) {
-    params.set("course", state.courseId);
+  if (state.courseOwnerUsername && state.courseSlug) {
+    params.set("owner", state.courseOwnerUsername);
+    params.set("course", state.courseSlug);
+  }
+
+  if (state.courseVersionNumber) {
+    params.set("version", formatCourseVersionSegment(state.courseVersionNumber));
   }
 
   if (state.goal) {

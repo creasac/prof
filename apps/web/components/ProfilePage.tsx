@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import type { PrivateProfile } from "@prof/contracts";
 
 import { authClient } from "../lib/auth-client";
+import { buildCourseHref } from "../lib/course-route";
 import { loadPrivateProfile } from "../lib/profile-api";
-import { buildLearnHref, createLearnSessionId } from "../lib/learn-route";
 
 type ProfilePageProps = {
   username: string;
@@ -84,21 +84,7 @@ export function ProfilePage({ username }: ProfilePageProps) {
   }, [isAuthPending, normalizedUsername, session?.user?.id, sessionUsername]);
 
   function openCourse(courseId: string) {
-    const nextSessionId = createLearnSessionId();
     setPendingCourseId(courseId);
-
-    startTransition(() => {
-      router.push(
-        buildLearnHref({
-          sessionId: nextSessionId,
-          courseId,
-          goal: "",
-          preferredBlockType: "",
-          useWebSearch: false,
-          autoStartAction: null,
-        }),
-      );
-    });
   }
 
   if (isLoading) {
@@ -134,7 +120,17 @@ export function ProfilePage({ username }: ProfilePageProps) {
                   key={course.courseId}
                   type="button"
                   style={styles.card}
-                  onClick={() => openCourse(course.courseId)}
+                  onClick={() => {
+                    openCourse(course.courseId);
+                    startTransition(() => {
+                      router.push(
+                        buildCourseHref({
+                          username: course.ownerUsername,
+                          courseSlug: course.courseSlug,
+                        }),
+                      );
+                    });
+                  }}
                   disabled={isCoursePending}
                 >
                   <div style={styles.placeholder}>prof</div>

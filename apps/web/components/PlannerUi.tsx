@@ -17,6 +17,9 @@ type PlannerViewProps = {
   isGeneratingTopic: boolean;
   onSelectTopic: (topicId: string) => void;
   onGenerateTopic: () => void;
+  actionLabel?: string;
+  actionHint?: string;
+  showAction?: boolean;
 };
 
 export function PlannerView({
@@ -31,6 +34,9 @@ export function PlannerView({
   isGeneratingTopic,
   onSelectTopic,
   onGenerateTopic,
+  actionLabel = "Generate",
+  actionHint,
+  showAction = true,
 }: PlannerViewProps) {
   const showStream = streamedTopics.length > 0 || Boolean(streamedPlanTitle);
   const topics = showStream ? streamedTopics : plan ? flattenPlanTopics(plan) : [];
@@ -83,23 +89,26 @@ export function PlannerView({
         </div>
       )}
 
-      <div style={styles.topicActions}>
-        <p style={styles.topicHint}>
-          {plan
-            ? selectedTopicId
-              ? "Generate the selected item into the lesson area below."
-              : "Select an item to generate it."
-            : "Finish generating the outline before creating a lesson."}
-        </p>
-        <button
-          style={styles.primaryButton}
-          type="button"
-          onClick={onGenerateTopic}
-          disabled={!plan || !selectedTopicId || isGeneratingTopic || isPlanning}
-        >
-          {isGeneratingTopic ? "Generating..." : "Generate"}
-        </button>
-      </div>
+      {showAction ? (
+        <div style={styles.topicActions}>
+          <p style={styles.topicHint}>
+            {actionHint ??
+              (plan
+                ? selectedTopicId
+                  ? "Generate the selected item into the lesson area below."
+                  : "Select an item to generate it."
+                : "Finish generating the outline before creating a lesson.")}
+          </p>
+          <button
+            style={styles.primaryButton}
+            type="button"
+            onClick={onGenerateTopic}
+            disabled={!plan || !selectedTopicId || isGeneratingTopic || isPlanning}
+          >
+            {isGeneratingTopic ? "Generating..." : actionLabel}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

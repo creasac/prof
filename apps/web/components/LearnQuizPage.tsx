@@ -133,7 +133,9 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
             <Link
               href={buildLearnHref({
                 sessionId,
-                courseId: snapshot?.courseId ?? sessionId,
+                courseOwnerUsername: snapshot?.course?.ownerUsername ?? null,
+                courseSlug: snapshot?.course?.courseSlug ?? null,
+                courseVersionNumber: snapshot?.course?.versionNumber ?? null,
                 goal: "",
                 preferredBlockType: "",
                 useWebSearch: false,
@@ -158,7 +160,9 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
   ).length;
   const lessonHref = buildLearnHref({
     sessionId,
-    courseId: snapshot.courseId ?? sessionId,
+    courseOwnerUsername: snapshot.course?.ownerUsername ?? null,
+    courseSlug: snapshot.course?.courseSlug ?? null,
+    courseVersionNumber: snapshot.course?.versionNumber ?? null,
     goal: "",
     preferredBlockType: "",
     useWebSearch: false,

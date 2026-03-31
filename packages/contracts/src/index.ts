@@ -177,8 +177,32 @@ export const learnTopicArtifactsSchema = z.object({
   quiz: quizBlockSchema.nullable().default(null),
 });
 
+export const courseVisibilitySchema = z.enum(["private", "public"]);
+
+export const courseRefSchema = z.object({
+  courseId: z.string().min(1),
+  ownerUsername: z.string().min(1),
+  courseSlug: z.string().min(1),
+  versionNumber: z.number().int().min(1),
+  title: z.string().min(1),
+});
+
+export const courseSnapshotSchema = z.object({
+  goal: z.string(),
+  plan: coursePlanSchema.nullable(),
+  planSources: z.array(groundingSourceSchema),
+  selectedTopicId: z.string().nullable(),
+  generatedBlock: tutorBlockSchema.nullable(),
+  generatedTopicId: z.string().nullable(),
+  generatedQuiz: quizBlockSchema.nullable(),
+  generatedQuizTopicId: z.string().nullable(),
+  topicArtifacts: z.record(z.string(), learnTopicArtifactsSchema).optional().default({}),
+  blockSources: z.array(groundingSourceSchema),
+});
+
 export const learnSessionSnapshotSchema = z.object({
   courseId: z.string().nullable().default(null),
+  course: courseRefSchema.nullable().default(null),
   goal: z.string(),
   plannerInput: z.string(),
   preferredBlockType: tutorBlockTypeSchema.or(z.literal("")),
@@ -209,28 +233,58 @@ export const learnSessionSnapshotSchema = z.object({
 
 export const persistedLearnSessionSchema = z.object({
   sessionId: z.string().min(1),
-  courseId: z.string().min(1),
+  courseId: z.string().nullable().default(null),
   snapshot: learnSessionSnapshotSchema,
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),
 });
 
-export const learnCourseSummarySchema = z.object({
-  courseId: z.string().min(1),
+export const courseVersionSummarySchema = z.object({
+  versionNumber: z.number().int().min(1),
   title: z.string().min(1),
+  artifactCount: z.number().int().min(0),
+  createdAt: z.string().min(1),
+});
+
+export const persistedCourseVersionSchema = z.object({
+  versionNumber: z.number().int().min(1),
+  title: z.string().min(1),
+  artifactCount: z.number().int().min(0),
+  snapshot: courseSnapshotSchema,
+  createdAt: z.string().min(1),
+});
+
+export const courseSummarySchema = z.object({
+  courseId: z.string().min(1),
+  ownerUsername: z.string().min(1),
+  courseSlug: z.string().min(1),
+  title: z.string().min(1),
+  visibility: courseVisibilitySchema,
+  latestVersionNumber: z.number().int().min(1),
   artifactCount: z.number().int().min(0),
   updatedAt: z.string().min(1),
 });
 
-export const learnCourseSeedSchema = z.object({
+export const persistedCourseSchema = z.object({
   courseId: z.string().min(1),
-  snapshot: learnSessionSnapshotSchema,
+  ownerUsername: z.string().min(1),
+  courseSlug: z.string().min(1),
+  title: z.string().min(1),
+  visibility: courseVisibilitySchema,
+  latestVersionNumber: z.number().int().min(1),
+  requestedVersionNumber: z.number().int().min(1),
+  requestedVersion: persistedCourseVersionSchema,
+  versions: z.array(courseVersionSummarySchema),
+  isOwner: z.boolean(),
   updatedAt: z.string().min(1),
 });
 
+export const learnCourseSummarySchema = courseSummarySchema;
+export const learnCourseSeedSchema = persistedCourseSchema;
+
 export const privateProfileSchema = z.object({
   username: z.string().min(1),
-  courses: z.array(learnCourseSummarySchema),
+  courses: z.array(courseSummarySchema),
 });
 
 export const reasoningBlockRequestSchema = z.object({
@@ -523,6 +577,13 @@ export type LessonBlueprint = z.infer<typeof lessonBlueprintSchema>;
 export type LessonPlan = z.infer<typeof lessonPlanSchema>;
 export type LessonQuizRequest = z.infer<typeof lessonQuizRequestSchema>;
 export type LessonQuizResponse = z.infer<typeof lessonQuizResponseSchema>;
+export type CourseRef = z.infer<typeof courseRefSchema>;
+export type CourseSnapshot = z.infer<typeof courseSnapshotSchema>;
+export type CourseSummary = z.infer<typeof courseSummarySchema>;
+export type CourseVersionSummary = z.infer<typeof courseVersionSummarySchema>;
+export type PersistedCourse = z.infer<typeof persistedCourseSchema>;
+export type PersistedCourseVersion = z.infer<typeof persistedCourseVersionSchema>;
+export type CourseVisibility = z.infer<typeof courseVisibilitySchema>;
 export type LearnSessionMessage = z.infer<typeof learnSessionMessageSchema>;
 export type LearnTopicArtifacts = z.infer<typeof learnTopicArtifactsSchema>;
 export type LearnSessionSnapshot = z.infer<typeof learnSessionSnapshotSchema>;
@@ -605,3 +666,44 @@ export type TutorBlock = z.infer<typeof tutorBlockSchema>;
 export type TutorBlockType = z.infer<typeof tutorBlockTypeSchema>;
 export type ReasoningChatRequest = z.infer<typeof reasoningChatRequestSchema>;
 export type ReasoningChatResponse = z.infer<typeof reasoningChatResponseSchema>;
+
+const PUBLIC_ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+export function createPublicId(length = 10) {
+  const nextLength = Math.max(4, Math.floor(length));
+  const bytes = new Uint8Array(nextLength);
+
+  if (typeof globalThis.crypto !== "undefined" && typeof globalThis.crypto.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  let value = "";
+
+  for (const byte of bytes) {
+    value += PUBLIC_ID_ALPHABET[byte % PUBLIC_ID_ALPHABET.length];
+  }
+
+  return value;
+}
+
+export function formatCourseVersionSegment(versionNumber: number) {
+  return `v${versionNumber}`;
+}
+
+export function parseCourseVersionSegment(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const match = /^v([1-9]\d*)$/i.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(match[1] ?? "", 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : null;
+}

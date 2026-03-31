@@ -3,12 +3,13 @@ import cors from "cors";
 import {
   flashcardSchema,
   appConfigSchema,
-  learnCourseSeedSchema,
   lessonQuizRequestSchema,
   lessonQuizResponseSchema,
   learnSessionSnapshotSchema,
+  parseCourseVersionSegment,
   plannedTopicBlockRequestSchema,
   plannedTopicBlockResponseSchema,
+  persistedCourseSchema,
   privateProfileSchema,
   quizBlockSchema,
   reasoningTopicBlockStreamEventSchema,
@@ -34,9 +35,8 @@ import { ZodError, z } from "zod";
 import { authHandler, getAuthSession, isAuthEnabled } from "./auth.js";
 import { isDatabaseEnabled } from "./db/client.js";
 import { env } from "./env.js";
+import { listCoursesForUser, readCourseForViewer } from "./courses.js";
 import {
-  listLearnCoursesForUser,
-  readLearnCourseForUser,
   readLearnSessionForUser,
   saveLearnSessionForUser,
 } from "./learn-sessions.js";
@@ -140,23 +140,54 @@ app.get("/api/learn/sessions/:sessionId", async (req, res, next) => {
   }
 });
 
-app.get("/api/learn/courses/:courseId", async (req, res, next) => {
+app.get("/api/courses/:username/:courseSlug", async (req, res, next) => {
   try {
-    const authSession = await requireUserSession(req, res);
-    if (!authSession) {
-      return;
-    }
-
-    const courseRecord = await readLearnCourseForUser(authSession.user.id, req.params.courseId);
+    const authSession = await getAuthSession(req.headers);
+    const courseRecord = await readCourseForViewer({
+      viewerUserId: authSession?.user?.id ?? null,
+      ownerUsername: req.params.username,
+      courseSlug: req.params.courseSlug,
+    });
 
     if (!courseRecord) {
       res.status(404).json({
-        error: `Course ${req.params.courseId} was not found.`,
+        error: `Course @${req.params.username}/${req.params.courseSlug} was not found.`,
       });
       return;
     }
 
-    res.json(learnCourseSeedSchema.parse(courseRecord));
+    res.json(persistedCourseSchema.parse(courseRecord));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/courses/:username/:courseSlug/:versionSegment", async (req, res, next) => {
+  try {
+    const versionNumber = parseCourseVersionSegment(req.params.versionSegment);
+    if (!versionNumber) {
+      res.status(404).json({
+        error: "Course version not found.",
+      });
+      return;
+    }
+
+    const authSession = await getAuthSession(req.headers);
+    const courseRecord = await readCourseForViewer({
+      viewerUserId: authSession?.user?.id ?? null,
+      ownerUsername: req.params.username,
+      courseSlug: req.params.courseSlug,
+      versionNumber,
+    });
+
+    if (!courseRecord) {
+      res.status(404).json({
+        error: `Course version @${req.params.username}/${req.params.courseSlug}/${req.params.versionSegment} was not found.`,
+      });
+      return;
+    }
+
+    res.json(persistedCourseSchema.parse(courseRecord));
   } catch (error) {
     next(error);
   }
@@ -170,7 +201,12 @@ app.put("/api/learn/sessions/:sessionId", async (req, res, next) => {
     }
 
     const snapshot = learnSessionSnapshotSchema.parse(req.body);
-    const persistedSession = await saveLearnSessionForUser(authSession.user.id, req.params.sessionId, snapshot);
+    const persistedSession = await saveLearnSessionForUser(
+      authSession.user.id,
+      getSessionUsername(authSession),
+      req.params.sessionId,
+      snapshot,
+    );
     res.json(persistedSession);
   } catch (error) {
     next(error);
@@ -194,7 +230,7 @@ app.get("/api/profile/:username", async (req, res, next) => {
       return;
     }
 
-    const courses = await listLearnCoursesForUser(authSession.user.id);
+    const courses = await listCoursesForUser(authSession.user.id);
 
     res.json(
       privateProfileSchema.parse({

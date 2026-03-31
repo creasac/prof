@@ -1,8 +1,6 @@
 import {
-  learnCourseSeedSchema,
   learnSessionSnapshotSchema,
   persistedLearnSessionSchema,
-  type LearnCourseSeed,
   type LearnSessionSnapshot,
   type PersistedLearnSession,
 } from "@prof/contracts";
@@ -22,21 +20,6 @@ export async function loadRemoteLearnSession(sessionId: string): Promise<Persist
   }
 
   return persistedLearnSessionSchema.parse(await response.json());
-}
-
-export async function loadRemoteLearnCourse(courseId: string): Promise<LearnCourseSeed | null> {
-  const response = await fetchApi(`/api/learn/courses/${encodeURIComponent(courseId)}`);
-
-  if (response.status === 404) {
-    return null;
-  }
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? "Failed to load the saved course.");
-  }
-
-  return learnCourseSeedSchema.parse(await response.json());
 }
 
 export async function saveRemoteLearnSession(sessionId: string, snapshot: LearnSessionSnapshot) {

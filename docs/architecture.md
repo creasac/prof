@@ -53,6 +53,17 @@ This document describes the stable technical shape of `prof`.
 - Tool failures should surface clearly and remain recoverable.
 - Live transport failure should not block text-based planning or artifact generation.
 
+## Learn and course routing
+
+- `/learn/:sessionId` is the private session shell. It owns chat, live state, drafts, selection state, and other session-local UI state.
+- `/@username/:courseSlug` is the standalone course shell. It shows structured learning content only and never opens the chat UI.
+- `/@username/:courseSlug/v1`, `/v2`, and so on are immutable course versions.
+- The latest course route resolves to the current head version of that course lineage.
+- A learn session may seed from an existing course version. If the session changes course content, the save path creates the next immutable course version.
+- Course versions should track content changes, not session-only navigation. UI state like the currently selected topic must not create a new version on its own.
+- Course slugs are unique per owner, not globally. Renames should preserve the lineage and ideally redirect old slugs later.
+- A fork creates a new course lineage under the editing user rather than appending versions to another user's course.
+
 ## Stable contracts
 
 ### Live session contract
