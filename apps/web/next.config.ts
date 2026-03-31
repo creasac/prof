@@ -5,12 +5,8 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
-        source: "/@:username/:courseSlug/:version/quiz/:quizIndex",
-        destination: "/course/:username/:courseSlug/:version/quiz/:quizIndex",
-      },
-      {
-        source: "/@:username/:courseSlug/:version",
-        destination: "/course/:username/:courseSlug/:version",
+        source: "/@:username/:courseSlug/quiz/:quizIndex",
+        destination: "/course/:username/:courseSlug/quiz/:quizIndex",
       },
       {
         source: "/@:username/:courseSlug",

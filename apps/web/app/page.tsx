@@ -26,7 +26,6 @@ export default function HomePage() {
           sessionId,
           courseOwnerUsername: null,
           courseSlug: null,
-          courseVersionNumber: null,
           goal,
           preferredBlockType,
           useWebSearch,

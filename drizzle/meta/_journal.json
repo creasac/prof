@@ -22,6 +22,13 @@
       "when": 1774944000000,
       "tag": "0002_curious_courses",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774947600000,
+      "tag": "0003_latest_courses",
+      "breakpoints": true
     }
   ]
 }

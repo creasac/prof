@@ -1,7 +1,6 @@
 "use client";
 import {
   appConfigSchema,
-  formatCourseVersionSegment,
   lessonQuizResponseSchema,
   reasoningPlanStreamEventSchema,
   reasoningTopicBlockStreamEventSchema,
@@ -459,14 +458,12 @@ function createCourseRef(input: {
   courseId: string;
   ownerUsername: string;
   courseSlug: string;
-  versionNumber: number;
   title: string;
 }): CourseRef {
   return {
     courseId: input.courseId,
     ownerUsername: input.ownerUsername,
     courseSlug: input.courseSlug,
-    versionNumber: input.versionNumber,
     title: input.title,
   };
 }
@@ -759,20 +756,15 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
       if (!snapshot && routeState.courseOwnerUsername && routeState.courseSlug) {
         try {
-          const remoteCourse = await loadRemoteCourse(
-            routeState.courseOwnerUsername,
-            routeState.courseSlug,
-            routeState.courseVersionNumber ? formatCourseVersionSegment(routeState.courseVersionNumber) : null,
-          );
+          const remoteCourse = await loadRemoteCourse(routeState.courseOwnerUsername, routeState.courseSlug);
           if (!cancelled && remoteCourse) {
             snapshot = createSeededSessionSnapshot(
-              remoteCourse.requestedVersion.snapshot,
+              remoteCourse.snapshot,
               createCourseRef({
                 courseId: remoteCourse.courseId,
                 ownerUsername: remoteCourse.ownerUsername,
                 courseSlug: remoteCourse.courseSlug,
-                versionNumber: remoteCourse.requestedVersion.versionNumber,
-                title: remoteCourse.requestedVersion.title,
+                title: remoteCourse.title,
               }),
             );
           }
@@ -872,7 +864,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     isAuthPending,
     routeState.courseOwnerUsername,
     routeState.courseSlug,
-    routeState.courseVersionNumber,
     routeState.goal,
     routeState.preferredBlockType,
     routeState.useWebSearch,
@@ -911,7 +902,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         sessionId,
         courseOwnerUsername: course?.ownerUsername ?? routeState.courseOwnerUsername,
         courseSlug: course?.courseSlug ?? routeState.courseSlug,
-        courseVersionNumber: course?.versionNumber ?? routeState.courseVersionNumber,
         goal: "",
         preferredBlockType: "",
         useWebSearch: false,
@@ -942,7 +932,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     course,
     routeState.courseOwnerUsername,
     routeState.courseSlug,
-    routeState.courseVersionNumber,
     sessionId,
   ]);
 
@@ -998,10 +987,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           const nextCourse = persistedSession.snapshot.course ?? null;
           setCourse((current) => {
             const currentKey = current
-              ? `${current.courseId}:${current.ownerUsername}:${current.courseSlug}:${current.versionNumber}:${current.title}`
+              ? `${current.courseId}:${current.ownerUsername}:${current.courseSlug}:${current.title}`
               : "";
             const nextKey = nextCourse
-              ? `${nextCourse.courseId}:${nextCourse.ownerUsername}:${nextCourse.courseSlug}:${nextCourse.versionNumber}:${nextCourse.title}`
+              ? `${nextCourse.courseId}:${nextCourse.ownerUsername}:${nextCourse.courseSlug}:${nextCourse.title}`
               : "";
 
             return currentKey === nextKey ? current : nextCourse;
@@ -2792,7 +2781,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         sessionId: nextSessionId,
         courseOwnerUsername: course?.ownerUsername ?? routeState.courseOwnerUsername,
         courseSlug: course?.courseSlug ?? routeState.courseSlug,
-        courseVersionNumber: course?.versionNumber ?? routeState.courseVersionNumber,
         goal: nextGoal,
         preferredBlockType,
         useWebSearch,

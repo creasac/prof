@@ -183,7 +183,6 @@ export const courseRefSchema = z.object({
   courseId: z.string().min(1),
   ownerUsername: z.string().min(1),
   courseSlug: z.string().min(1),
-  versionNumber: z.number().int().min(1),
   title: z.string().min(1),
 });
 
@@ -239,28 +238,12 @@ export const persistedLearnSessionSchema = z.object({
   updatedAt: z.string().min(1),
 });
 
-export const courseVersionSummarySchema = z.object({
-  versionNumber: z.number().int().min(1),
-  title: z.string().min(1),
-  artifactCount: z.number().int().min(0),
-  createdAt: z.string().min(1),
-});
-
-export const persistedCourseVersionSchema = z.object({
-  versionNumber: z.number().int().min(1),
-  title: z.string().min(1),
-  artifactCount: z.number().int().min(0),
-  snapshot: courseSnapshotSchema,
-  createdAt: z.string().min(1),
-});
-
 export const courseSummarySchema = z.object({
   courseId: z.string().min(1),
   ownerUsername: z.string().min(1),
   courseSlug: z.string().min(1),
   title: z.string().min(1),
   visibility: courseVisibilitySchema,
-  latestVersionNumber: z.number().int().min(1),
   artifactCount: z.number().int().min(0),
   updatedAt: z.string().min(1),
 });
@@ -271,10 +254,8 @@ export const persistedCourseSchema = z.object({
   courseSlug: z.string().min(1),
   title: z.string().min(1),
   visibility: courseVisibilitySchema,
-  latestVersionNumber: z.number().int().min(1),
-  requestedVersionNumber: z.number().int().min(1),
-  requestedVersion: persistedCourseVersionSchema,
-  versions: z.array(courseVersionSummarySchema),
+  artifactCount: z.number().int().min(0),
+  snapshot: courseSnapshotSchema,
   isOwner: z.boolean(),
   updatedAt: z.string().min(1),
 });
@@ -580,9 +561,7 @@ export type LessonQuizResponse = z.infer<typeof lessonQuizResponseSchema>;
 export type CourseRef = z.infer<typeof courseRefSchema>;
 export type CourseSnapshot = z.infer<typeof courseSnapshotSchema>;
 export type CourseSummary = z.infer<typeof courseSummarySchema>;
-export type CourseVersionSummary = z.infer<typeof courseVersionSummarySchema>;
 export type PersistedCourse = z.infer<typeof persistedCourseSchema>;
-export type PersistedCourseVersion = z.infer<typeof persistedCourseVersionSchema>;
 export type CourseVisibility = z.infer<typeof courseVisibilitySchema>;
 export type LearnSessionMessage = z.infer<typeof learnSessionMessageSchema>;
 export type LearnTopicArtifacts = z.infer<typeof learnTopicArtifactsSchema>;
@@ -688,22 +667,4 @@ export function createPublicId(length = 10) {
   }
 
   return value;
-}
-
-export function formatCourseVersionSegment(versionNumber: number) {
-  return `v${versionNumber}`;
-}
-
-export function parseCourseVersionSegment(value: string | null | undefined) {
-  if (!value) {
-    return null;
-  }
-
-  const match = /^v([1-9]\d*)$/i.exec(value.trim());
-  if (!match) {
-    return null;
-  }
-
-  const parsed = Number.parseInt(match[1] ?? "", 10);
-  return Number.isFinite(parsed) && parsed >= 1 ? parsed : null;
 }

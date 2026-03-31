@@ -19,11 +19,10 @@ import {
 type CourseQuizPageProps = {
   username: string;
   courseSlug: string;
-  versionSegment: string;
   quizIndex: number;
 };
 
-export function CourseQuizPage({ username, courseSlug, versionSegment, quizIndex }: CourseQuizPageProps) {
+export function CourseQuizPage({ username, courseSlug, quizIndex }: CourseQuizPageProps) {
   const [course, setCourse] = useState<PersistedCourse | null>(null);
   const [quiz, setQuiz] = useState<QuizBlock | null>(null);
   const [progress, setProgress] = useState<QuizProgress | null>(null);
@@ -39,7 +38,7 @@ export function CourseQuizPage({ username, courseSlug, versionSegment, quizIndex
       setPageError(null);
 
       try {
-        const nextCourse = await loadRemoteCourse(username, courseSlug, versionSegment);
+        const nextCourse = await loadRemoteCourse(username, courseSlug);
         if (cancelled) {
           return;
         }
@@ -53,7 +52,7 @@ export function CourseQuizPage({ username, courseSlug, versionSegment, quizIndex
           return;
         }
 
-        const quizzes = collectCourseQuizzes(nextCourse.requestedVersion.snapshot);
+        const quizzes = collectCourseQuizzes(nextCourse.snapshot);
         const entry = quizzes.find((candidate) => candidate.index === quizIndex) ?? null;
 
         setCourse(nextCourse);
@@ -74,7 +73,7 @@ export function CourseQuizPage({ username, courseSlug, versionSegment, quizIndex
     return () => {
       cancelled = true;
     };
-  }, [courseSlug, quizIndex, username, versionSegment]);
+  }, [courseSlug, quizIndex, username]);
 
   const result = useMemo(() => {
     if (!quiz || !progress || !progress.submitted) {
@@ -91,7 +90,6 @@ export function CourseQuizPage({ username, courseSlug, versionSegment, quizIndex
   const backHref = buildCourseHref({
     username,
     courseSlug,
-    versionNumber: course?.requestedVersion.versionNumber ?? null,
   });
 
   if (!course || !quiz || !progress) {
@@ -105,7 +103,7 @@ export function CourseQuizPage({ username, courseSlug, versionSegment, quizIndex
             </Link>
           </header>
           <div style={styles.card}>
-            <p style={styles.bodyText}>{pageError ?? "Quiz is not available in this course version."}</p>
+            <p style={styles.bodyText}>{pageError ?? "Quiz is not available in this course."}</p>
           </div>
         </section>
       </main>

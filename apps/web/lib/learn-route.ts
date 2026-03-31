@@ -1,11 +1,10 @@
-import { createPublicId, formatCourseVersionSegment, parseCourseVersionSegment, type TutorBlockType } from "@prof/contracts";
+import { createPublicId, type TutorBlockType } from "@prof/contracts";
 
 export type TutorLaunchAction = "generate" | "live" | null;
 
 export type LearnRouteState = {
   courseOwnerUsername: string | null;
   courseSlug: string | null;
-  courseVersionNumber: number | null;
   goal: string;
   preferredBlockType: TutorBlockType | "";
   useWebSearch: boolean;
@@ -45,12 +44,10 @@ export function parseLearnRouteState(searchParams: SearchParamsLike): LearnRoute
   const rawAutoStartAction = readParam(searchParams, "autostart");
   const rawCourseOwnerUsername = readParam(searchParams, "owner");
   const rawCourseSlug = readParam(searchParams, "course");
-  const rawCourseVersion = readParam(searchParams, "version");
 
   return {
     courseOwnerUsername: rawCourseOwnerUsername?.trim() ? rawCourseOwnerUsername.trim().toLowerCase() : null,
     courseSlug: rawCourseSlug?.trim() ? rawCourseSlug.trim().toLowerCase() : null,
-    courseVersionNumber: parseCourseVersionSegment(rawCourseVersion),
     goal: readParam(searchParams, "goal") ?? "",
     preferredBlockType: VALID_BLOCK_TYPES.has(rawPreferredBlockType as TutorBlockType)
       ? (rawPreferredBlockType as TutorBlockType)
@@ -71,10 +68,6 @@ export function buildLearnHref(state: LearnHrefState) {
   if (state.courseOwnerUsername && state.courseSlug) {
     params.set("owner", state.courseOwnerUsername);
     params.set("course", state.courseSlug);
-  }
-
-  if (state.courseVersionNumber) {
-    params.set("version", formatCourseVersionSegment(state.courseVersionNumber));
   }
 
   if (state.goal) {

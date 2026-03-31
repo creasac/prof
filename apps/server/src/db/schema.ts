@@ -111,7 +111,8 @@ export const course = pgTable(
     slug: text("slug").notNull(),
     title: text("title").notNull(),
     visibility: text("visibility").notNull().default("private"),
-    latestVersionNumber: integer("latest_version_number").notNull().default(1),
+    artifactCount: integer("artifact_count").notNull().default(0),
+    snapshot: jsonb("snapshot").$type<CourseSnapshot>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },
@@ -122,31 +123,6 @@ export const course = pgTable(
   }),
 );
 
-export const courseVersion = pgTable(
-  "course_version",
-  {
-    id: text("id").primaryKey(),
-    courseId: text("course_id")
-      .notNull()
-      .references(() => course.id, { onDelete: "cascade" }),
-    versionNumber: integer("version_number").notNull(),
-    parentVersionId: text("parent_version_id"),
-    createdByUserId: text("created_by_user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    artifactCount: integer("artifact_count").notNull().default(0),
-    snapshot: jsonb("snapshot").$type<CourseSnapshot>().notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
-  },
-  (table) => ({
-    courseIndex: index("course_version_course_id_idx").on(table.courseId),
-    courseVersionUnique: uniqueIndex("course_version_course_version_unique").on(table.courseId, table.versionNumber),
-    parentIndex: index("course_version_parent_version_id_idx").on(table.parentVersionId),
-    createdAtIndex: index("course_version_created_at_idx").on(table.createdAt),
-  }),
-);
-
 export const schema = {
   user,
   session,
@@ -154,7 +130,6 @@ export const schema = {
   verification,
   learnSession,
   course,
-  courseVersion,
 };
 
 export const emptyJsonArray = sql`'[]'::jsonb`;

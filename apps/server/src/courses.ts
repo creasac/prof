@@ -15,7 +15,7 @@ import {
 } from "@prof/contracts";
 
 import { requireDb } from "./db/client.js";
-import { course, courseVersion, learnSession, user } from "./db/schema.js";
+import { course, learnSession, user } from "./db/schema.js";
 
 function normalizeUsername(value: string) {
   return value.trim().toLowerCase();
@@ -101,7 +101,7 @@ function deriveCourseSnapshot(snapshot: LearnSessionSnapshot) {
     goal: snapshot.goal,
     plan: snapshot.plan,
     planSources: snapshot.planSources ?? [],
-    // Topic selection is session UI state. It should not mint a new course version on every click.
+    // Topic selection is session UI state. It should not mutate the saved course on every click.
     selectedTopicId: null,
     generatedBlock: snapshot.generatedBlock,
     generatedTopicId: snapshot.generatedTopicId,
@@ -148,7 +148,8 @@ async function readCourseLineageById(courseId: string) {
       slug: course.slug,
       title: course.title,
       visibility: course.visibility,
-      latestVersionNumber: course.latestVersionNumber,
+      artifactCount: course.artifactCount,
+      snapshot: course.snapshot,
       createdAt: course.createdAt,
       updatedAt: course.updatedAt,
       ownerUsername: user.username,
@@ -169,7 +170,8 @@ async function readCourseLineageByOwnerAndSlug(ownerUsername: string, courseSlug
       slug: course.slug,
       title: course.title,
       visibility: course.visibility,
-      latestVersionNumber: course.latestVersionNumber,
+      artifactCount: course.artifactCount,
+      snapshot: course.snapshot,
       createdAt: course.createdAt,
       updatedAt: course.updatedAt,
       ownerUsername: user.username,
@@ -182,21 +184,10 @@ async function readCourseLineageByOwnerAndSlug(ownerUsername: string, courseSlug
   return record ?? null;
 }
 
-async function readCourseVersionRecord(courseId: string, versionNumber: number) {
-  const [record] = await requireDb()
-    .select()
-    .from(courseVersion)
-    .where(and(eq(courseVersion.courseId, courseId), eq(courseVersion.versionNumber, versionNumber)))
-    .limit(1);
-
-  return record ?? null;
-}
-
 function toCourseRef(input: {
   courseId: string;
   ownerUsername: string;
   courseSlug: string;
-  versionNumber: number;
   title: string;
 }) {
   return courseRefSchema.parse(input);
@@ -207,6 +198,8 @@ async function createCourseLineage(options: {
   ownerUsername: string;
   preferredSlug: string;
   title: string;
+  artifactCount: number;
+  snapshot: CourseSnapshot;
 }) {
   const db = requireDb();
   const slug = await ensureUniqueSlug(options.ownerId, options.preferredSlug);
@@ -219,7 +212,8 @@ async function createCourseLineage(options: {
       slug,
       title: options.title,
       visibility: "private",
-      latestVersionNumber: 1,
+      artifactCount: options.artifactCount,
+      snapshot: options.snapshot,
       createdAt: now,
       updatedAt: now,
     })
@@ -309,11 +303,18 @@ export async function syncCourseForUser(options: {
   }
 
   const courseTitle = deriveCourseTitle(normalizedSnapshot);
+  const artifactCount = countSnapshotArtifacts(normalizedSnapshot);
   const currentCourseRef = snapshot.course ?? null;
+
   if (currentCourseRef?.courseId && currentCourseRef.ownerUsername !== username) {
-    const sourceVersion = await readCourseVersionRecord(currentCourseRef.courseId, currentCourseRef.versionNumber);
-    if (sourceVersion && snapshotsMatch(sourceVersion.snapshot, normalizedSnapshot)) {
-      return currentCourseRef;
+    const sourceCourse = await readCourseLineageById(currentCourseRef.courseId);
+    if (sourceCourse && snapshotsMatch(sourceCourse.snapshot, normalizedSnapshot)) {
+      return toCourseRef({
+        courseId: sourceCourse.id,
+        ownerUsername: sourceCourse.ownerUsername ?? currentCourseRef.ownerUsername,
+        courseSlug: sourceCourse.slug,
+        title: sourceCourse.title,
+      });
     }
   }
 
@@ -329,59 +330,36 @@ export async function syncCourseForUser(options: {
       ownerUsername: username,
       preferredSlug,
       title: courseTitle,
+      artifactCount,
+      snapshot: normalizedSnapshot,
     });
-  }
+  } else if (!snapshotsMatch(courseRecord.snapshot, normalizedSnapshot) || courseRecord.title !== courseTitle) {
+    const now = new Date();
 
-  const latestVersion =
-    courseRecord.latestVersionNumber > 0
-      ? await readCourseVersionRecord(courseRecord.id, courseRecord.latestVersionNumber)
-      : null;
+    await requireDb()
+      .update(course)
+      .set({
+        title: courseTitle,
+        artifactCount,
+        snapshot: normalizedSnapshot,
+        updatedAt: now,
+      })
+      .where(eq(course.id, courseRecord.id));
 
-  if (latestVersion && snapshotsMatch(latestVersion.snapshot, normalizedSnapshot)) {
-    return toCourseRef({
-      courseId: courseRecord.id,
-      ownerUsername: courseRecord.ownerUsername ?? username,
-      courseSlug: courseRecord.slug,
-      versionNumber: latestVersion.versionNumber,
-      title: latestVersion.title,
-    });
-  }
-
-  const baseVersion =
-    currentCourseRef?.courseId === courseRecord.id && currentCourseRef.versionNumber >= 1
-      ? await readCourseVersionRecord(courseRecord.id, currentCourseRef.versionNumber)
-      : latestVersion;
-  const nextVersionNumber = (latestVersion?.versionNumber ?? 0) + 1;
-  const artifactCount = countSnapshotArtifacts(normalizedSnapshot);
-  const now = new Date();
-
-  await requireDb().insert(courseVersion).values({
-    id: createPublicId(12),
-    courseId: courseRecord.id,
-    versionNumber: nextVersionNumber,
-    parentVersionId: baseVersion?.id ?? null,
-    createdByUserId: userId,
-    title: courseTitle,
-    artifactCount,
-    snapshot: normalizedSnapshot,
-    createdAt: now,
-  });
-
-  await requireDb()
-    .update(course)
-    .set({
+    courseRecord = {
+      ...courseRecord,
       title: courseTitle,
-      latestVersionNumber: nextVersionNumber,
+      artifactCount,
+      snapshot: normalizedSnapshot,
       updatedAt: now,
-    })
-    .where(eq(course.id, courseRecord.id));
+    };
+  }
 
   return toCourseRef({
     courseId: courseRecord.id,
     ownerUsername: courseRecord.ownerUsername ?? username,
     courseSlug: courseRecord.slug,
-    versionNumber: nextVersionNumber,
-    title: courseTitle,
+    title: courseRecord.title,
   });
 }
 
@@ -392,11 +370,6 @@ export async function listCoursesForUser(userId: string) {
   const summaries: CourseSummary[] = [];
 
   for (const record of courseRecords) {
-    const latestVersion = await readCourseVersionRecord(record.id, record.latestVersionNumber);
-    if (!latestVersion) {
-      continue;
-    }
-
     const [ownerRecord] = await requireDb()
       .select({ username: user.username })
       .from(user)
@@ -414,8 +387,7 @@ export async function listCoursesForUser(userId: string) {
         courseSlug: record.slug,
         title: record.title,
         visibility: courseVisibilitySchema.parse(record.visibility),
-        latestVersionNumber: latestVersion.versionNumber,
-        artifactCount: latestVersion.artifactCount,
+        artifactCount: record.artifactCount,
         updatedAt: record.updatedAt.toISOString(),
       }),
     );
@@ -428,7 +400,6 @@ export async function readCourseForViewer(options: {
   viewerUserId: string | null;
   ownerUsername: string;
   courseSlug: string;
-  versionNumber?: number | null;
 }) {
   const courseRecord = await readCourseLineageByOwnerAndSlug(options.ownerUsername, options.courseSlug);
 
@@ -443,45 +414,14 @@ export async function readCourseForViewer(options: {
     return null;
   }
 
-  const requestedVersionNumber = options.versionNumber ?? courseRecord.latestVersionNumber;
-  const requestedVersion = await readCourseVersionRecord(courseRecord.id, requestedVersionNumber);
-
-  if (!requestedVersion) {
-    return null;
-  }
-
-  const versionRecords = await requireDb()
-    .select({
-      versionNumber: courseVersion.versionNumber,
-      title: courseVersion.title,
-      artifactCount: courseVersion.artifactCount,
-      createdAt: courseVersion.createdAt,
-    })
-    .from(courseVersion)
-    .where(eq(courseVersion.courseId, courseRecord.id))
-    .orderBy(desc(courseVersion.versionNumber));
-
   return persistedCourseSchema.parse({
     courseId: courseRecord.id,
     ownerUsername: courseRecord.ownerUsername ?? options.ownerUsername,
     courseSlug: courseRecord.slug,
     title: courseRecord.title,
     visibility,
-    latestVersionNumber: courseRecord.latestVersionNumber,
-    requestedVersionNumber,
-    requestedVersion: {
-      versionNumber: requestedVersion.versionNumber,
-      title: requestedVersion.title,
-      artifactCount: requestedVersion.artifactCount,
-      snapshot: requestedVersion.snapshot,
-      createdAt: requestedVersion.createdAt.toISOString(),
-    },
-    versions: versionRecords.map((record) => ({
-      versionNumber: record.versionNumber,
-      title: record.title,
-      artifactCount: record.artifactCount,
-      createdAt: record.createdAt.toISOString(),
-    })),
+    artifactCount: courseRecord.artifactCount,
+    snapshot: courseRecord.snapshot,
     isOwner,
     updatedAt: courseRecord.updatedAt.toISOString(),
   });
@@ -492,7 +432,6 @@ export function buildCourseRefFromCourse(courseRecord: PersistedCourse): CourseR
     courseId: courseRecord.courseId,
     ownerUsername: courseRecord.ownerUsername,
     courseSlug: courseRecord.courseSlug,
-    versionNumber: courseRecord.requestedVersion.versionNumber,
-    title: courseRecord.requestedVersion.title,
+    title: courseRecord.title,
   });
 }

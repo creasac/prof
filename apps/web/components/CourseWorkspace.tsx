@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 
 import { authClient } from "../lib/auth-client";
 import { loadRemoteCourse } from "../lib/course-api";
-import { buildCourseHref, buildCourseQuizHref } from "../lib/course-route";
+import { buildCourseQuizHref } from "../lib/course-route";
 import { collectCourseQuizzes, findTopicInPlan, pickSelectedTopicId, resolveCourseBlock } from "../lib/course-view";
 import { buildLearnHref, createLearnSessionId } from "../lib/learn-route";
 import { PlannerView } from "./PlannerUi";
@@ -16,7 +16,6 @@ import { BlockView, IconText } from "./TutorUi";
 type CourseWorkspaceProps = {
   username: string;
   courseSlug: string;
-  versionSegment?: string | null;
 };
 
 function formatUpdatedAt(value: string) {
@@ -31,7 +30,7 @@ function formatUpdatedAt(value: string) {
   }
 }
 
-export function CourseWorkspace({ username, courseSlug, versionSegment }: CourseWorkspaceProps) {
+export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) {
   const router = useRouter();
   const { data: authSession } = authClient.useSession();
   const [course, setCourse] = useState<PersistedCourse | null>(null);
@@ -48,7 +47,7 @@ export function CourseWorkspace({ username, courseSlug, versionSegment }: Course
       setPageError(null);
 
       try {
-        const nextCourse = await loadRemoteCourse(username, courseSlug, versionSegment ?? null);
+        const nextCourse = await loadRemoteCourse(username, courseSlug);
 
         if (cancelled) {
           return;
@@ -62,7 +61,7 @@ export function CourseWorkspace({ username, courseSlug, versionSegment }: Course
         }
 
         setCourse(nextCourse);
-        setSelectedTopicId(pickSelectedTopicId(nextCourse.requestedVersion.snapshot));
+        setSelectedTopicId(pickSelectedTopicId(nextCourse.snapshot));
       } catch (error) {
         if (!cancelled) {
           setPageError(error instanceof Error ? error.message : "Failed to load course.");
@@ -79,9 +78,9 @@ export function CourseWorkspace({ username, courseSlug, versionSegment }: Course
     return () => {
       cancelled = true;
     };
-  }, [courseSlug, username, versionSegment]);
+  }, [courseSlug, username]);
 
-  const snapshot = course?.requestedVersion.snapshot ?? null;
+  const snapshot = course?.snapshot ?? null;
   const effectiveTopicId = selectedTopicId ?? (snapshot ? pickSelectedTopicId(snapshot) : null);
   const selectedTopic = snapshot?.plan ? findTopicInPlan(snapshot.plan, effectiveTopicId) : null;
   const activeContent = snapshot ? resolveCourseBlock(snapshot, effectiveTopicId) : null;
@@ -105,7 +104,6 @@ export function CourseWorkspace({ username, courseSlug, versionSegment }: Course
           sessionId: nextSessionId,
           courseOwnerUsername: course.ownerUsername,
           courseSlug: course.courseSlug,
-          courseVersionNumber: course.requestedVersion.versionNumber,
           goal: "",
           preferredBlockType: "",
           useWebSearch: false,
@@ -137,12 +135,6 @@ export function CourseWorkspace({ username, courseSlug, versionSegment }: Course
     );
   }
 
-  const latestHref = buildCourseHref({
-    username: course.ownerUsername,
-    courseSlug: course.courseSlug,
-  });
-  const isViewingLatest = course.requestedVersionNumber === course.latestVersionNumber;
-
   return (
     <main style={styles.page}>
       <section style={styles.shell}>
@@ -150,41 +142,15 @@ export function CourseWorkspace({ username, courseSlug, versionSegment }: Course
           <div style={styles.headerCopy}>
             <p style={styles.ownerText}>@{course.ownerUsername}</p>
             <h1 style={styles.title}>{course.title}</h1>
-            <p style={styles.metaText}>
-              {course.courseSlug} · v{course.requestedVersionNumber} · updated {formatUpdatedAt(course.updatedAt)}
-            </p>
+            <p style={styles.metaText}>{course.courseSlug} · updated {formatUpdatedAt(course.updatedAt)}</p>
           </div>
 
           <div style={styles.headerActions}>
-            {!isViewingLatest ? (
-              <Link href={latestHref} style={styles.secondaryLink}>
-                Latest
-              </Link>
-            ) : null}
             <button type="button" style={styles.primaryButton} onClick={startLearning} disabled={isPending}>
               {isPending ? "Opening..." : "Learn"}
             </button>
           </div>
         </header>
-
-        <div style={styles.versionRow}>
-          {course.versions.map((version) => (
-            <Link
-              key={version.versionNumber}
-              href={buildCourseHref({
-                username: course.ownerUsername,
-                courseSlug: course.courseSlug,
-                versionNumber: version.versionNumber,
-              })}
-              style={{
-                ...styles.versionPill,
-                ...(version.versionNumber === course.requestedVersionNumber ? styles.versionPillActive : null),
-              }}
-            >
-              v{version.versionNumber}
-            </Link>
-          ))}
-        </div>
 
         <section style={styles.workspace}>
           <article style={styles.panel}>
@@ -211,7 +177,7 @@ export function CourseWorkspace({ username, courseSlug, versionSegment }: Course
 
           <article style={styles.panel}>
             <div style={styles.panelHeader}>
-              <h2 style={styles.sectionTitle}>{selectedTopic?.title ?? course.requestedVersion.title}</h2>
+              <h2 style={styles.sectionTitle}>{selectedTopic?.title ?? course.title}</h2>
             </div>
 
             <div style={styles.panelBody}>
@@ -227,14 +193,13 @@ export function CourseWorkspace({ username, courseSlug, versionSegment }: Course
                         <p style={styles.quizTitle}>Quiz</p>
                         <p style={styles.quizText}>
                           {activeQuizEntry.quiz.questions.length} question
-                          {activeQuizEntry.quiz.questions.length === 1 ? "" : "s"} available in this version.
+                          {activeQuizEntry.quiz.questions.length === 1 ? "" : "s"} available in this course.
                         </p>
                       </div>
                       <Link
                         href={buildCourseQuizHref({
                           username: course.ownerUsername,
                           courseSlug: course.courseSlug,
-                          versionNumber: course.requestedVersion.versionNumber,
                           quizIndex: activeQuizEntry.index,
                         })}
                         style={styles.secondaryLink}
@@ -257,7 +222,7 @@ export function CourseWorkspace({ username, courseSlug, versionSegment }: Course
         {authSession?.user?.id && course.isOwner ? (
           <p style={styles.helperText}>
             <IconText icon="stack" size={15}>
-              Opening Learn from here seeds a new session from this exact version.
+              Opening Learn from here seeds a new session from this course.
             </IconText>
           </p>
         ) : null}
@@ -331,25 +296,6 @@ const styles: Record<string, CSSProperties> = {
     color: "#5f473b",
     fontSize: "0.9rem",
     textDecoration: "none",
-  },
-  versionRow: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
-  versionPill: {
-    borderRadius: "999px",
-    padding: "6px 10px",
-    fontSize: "0.82rem",
-    border: "1px solid rgba(72, 42, 22, 0.08)",
-    color: "#6a5447",
-    textDecoration: "none",
-    background: "rgba(255, 253, 248, 0.68)",
-  },
-  versionPillActive: {
-    background: "rgba(255, 247, 239, 0.82)",
-    borderColor: "rgba(191, 91, 44, 0.18)",
-    color: "#8a3715",
   },
   workspace: {
     display: "grid",

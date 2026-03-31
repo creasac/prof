@@ -6,7 +6,6 @@ import {
   lessonQuizRequestSchema,
   lessonQuizResponseSchema,
   learnSessionSnapshotSchema,
-  parseCourseVersionSegment,
   plannedTopicBlockRequestSchema,
   plannedTopicBlockResponseSchema,
   persistedCourseSchema,
@@ -152,37 +151,6 @@ app.get("/api/courses/:username/:courseSlug", async (req, res, next) => {
     if (!courseRecord) {
       res.status(404).json({
         error: `Course @${req.params.username}/${req.params.courseSlug} was not found.`,
-      });
-      return;
-    }
-
-    res.json(persistedCourseSchema.parse(courseRecord));
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get("/api/courses/:username/:courseSlug/:versionSegment", async (req, res, next) => {
-  try {
-    const versionNumber = parseCourseVersionSegment(req.params.versionSegment);
-    if (!versionNumber) {
-      res.status(404).json({
-        error: "Course version not found.",
-      });
-      return;
-    }
-
-    const authSession = await getAuthSession(req.headers);
-    const courseRecord = await readCourseForViewer({
-      viewerUserId: authSession?.user?.id ?? null,
-      ownerUsername: req.params.username,
-      courseSlug: req.params.courseSlug,
-      versionNumber,
-    });
-
-    if (!courseRecord) {
-      res.status(404).json({
-        error: `Course version @${req.params.username}/${req.params.courseSlug}/${req.params.versionSegment} was not found.`,
       });
       return;
     }
