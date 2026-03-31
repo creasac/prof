@@ -1,13 +1,13 @@
 "use client";
 
-import type { PersistedCourse } from "@prof/contracts";
+import type { CourseVisibility, PersistedCourse } from "@prof/contracts";
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 
 import { authClient } from "../lib/auth-client";
-import { loadRemoteCourse } from "../lib/course-api";
-import { buildCourseQuizHref } from "../lib/course-route";
+import { forkRemoteCourse, loadRemoteCourse, updateRemoteCourseVisibility } from "../lib/course-api";
+import { buildCourseHref, buildCourseQuizHref } from "../lib/course-route";
 import { collectCourseQuizzes, findTopicInPlan, pickSelectedTopicId, resolveCourseBlock } from "../lib/course-view";
 import { buildLearnHref, createLearnSessionId } from "../lib/learn-route";
 import { PlannerView } from "./PlannerUi";
@@ -35,16 +35,21 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
   const { data: authSession } = authClient.useSession();
   const [course, setCourse] = useState<PersistedCourse | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<"copy" | "public" | "private" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function hydrateCourse() {
       setIsLoading(true);
+      setCourse(null);
       setPageError(null);
+      setActionError(null);
+      setSelectedTopicId(null);
 
       try {
         const nextCourse = await loadRemoteCourse(username, courseSlug);
@@ -91,6 +96,7 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
       quizzes[0] ??
       null
     : null;
+  const visibilityLabel = course?.visibility === "public" ? "Public" : "Private";
 
   function startLearning() {
     if (!course) {
@@ -111,6 +117,49 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
         }),
       );
     });
+  }
+
+  async function saveAsCopy() {
+    if (!course || course.isOwner || !authSession?.user?.id) {
+      return;
+    }
+
+    setPendingAction("copy");
+    setActionError(null);
+
+    try {
+      const forkedCourse = await forkRemoteCourse(course.ownerUsername, course.courseSlug);
+      setCourse(forkedCourse);
+      setSelectedTopicId(pickSelectedTopicId(forkedCourse.snapshot));
+      router.push(
+        buildCourseHref({
+          username: forkedCourse.ownerUsername,
+          courseSlug: forkedCourse.courseSlug,
+        }),
+      );
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to save a copy.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function changeVisibility(nextVisibility: CourseVisibility) {
+    if (!course || !course.isOwner || course.visibility === nextVisibility) {
+      return;
+    }
+
+    setPendingAction(nextVisibility);
+    setActionError(null);
+
+    try {
+      const updatedCourse = await updateRemoteCourseVisibility(course.ownerUsername, course.courseSlug, nextVisibility);
+      setCourse(updatedCourse);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to update course visibility.");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   if (isLoading) {
@@ -142,10 +191,43 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
           <div style={styles.headerCopy}>
             <p style={styles.ownerText}>@{course.ownerUsername}</p>
             <h1 style={styles.title}>{course.title}</h1>
-            <p style={styles.metaText}>{course.courseSlug} · updated {formatUpdatedAt(course.updatedAt)}</p>
+            <div style={styles.metaRow}>
+              <p style={styles.metaText}>{course.courseSlug} · updated {formatUpdatedAt(course.updatedAt)}</p>
+              <span style={styles.visibilityPill}>{visibilityLabel}</span>
+            </div>
           </div>
 
           <div style={styles.headerActions}>
+            {authSession?.user?.id && !course.isOwner ? (
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => {
+                  void saveAsCopy();
+                }}
+                disabled={pendingAction !== null}
+              >
+                {pendingAction === "copy" ? "Saving..." : "Save as Copy"}
+              </button>
+            ) : null}
+
+            {authSession?.user?.id && course.isOwner ? (
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => {
+                  void changeVisibility(course.visibility === "public" ? "private" : "public");
+                }}
+                disabled={pendingAction !== null}
+              >
+                {pendingAction === "public" || pendingAction === "private"
+                  ? "Saving..."
+                  : course.visibility === "public"
+                    ? "Make private"
+                    : "Make public"}
+              </button>
+            ) : null}
+
             <button type="button" style={styles.primaryButton} onClick={startLearning} disabled={isPending}>
               {isPending ? "Opening..." : "Learn"}
             </button>
@@ -182,6 +264,7 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
 
             <div style={styles.panelBody}>
               {pageError ? <p style={styles.errorText}>{pageError}</p> : null}
+              {actionError ? <p style={styles.errorText}>{actionError}</p> : null}
 
               {activeContent?.block ? (
                 <>
@@ -219,10 +302,12 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
           </article>
         </section>
 
-        {authSession?.user?.id && course.isOwner ? (
+        {authSession?.user?.id ? (
           <p style={styles.helperText}>
             <IconText icon="stack" size={15}>
-              Opening Learn from here seeds a new session from this course.
+              {course.isOwner
+                ? "Learn opens a new session seeded from this course."
+                : "Learn starts a seeded session. Save as Copy creates your own private course immediately."}
             </IconText>
           </p>
         ) : null}
@@ -274,10 +359,28 @@ const styles: Record<string, CSSProperties> = {
     color: "#6a5447",
     fontSize: "0.9rem",
   },
+  metaRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+    alignItems: "center",
+  },
+  visibilityPill: {
+    borderRadius: "999px",
+    border: "1px solid rgba(138, 55, 21, 0.14)",
+    background: "rgba(255, 247, 240, 0.9)",
+    color: "#8a3715",
+    padding: "4px 10px",
+    fontSize: "0.78rem",
+    fontWeight: 600,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+  },
   headerActions: {
     display: "flex",
     gap: "10px",
     alignItems: "center",
+    flexWrap: "wrap",
   },
   primaryButton: {
     border: "none",
@@ -285,6 +388,15 @@ const styles: Record<string, CSSProperties> = {
     padding: "10px 16px",
     background: "#8a3715",
     color: "#fff8f1",
+    fontSize: "0.9rem",
+    cursor: "pointer",
+  },
+  secondaryButton: {
+    borderRadius: "999px",
+    border: "1px solid rgba(72, 42, 22, 0.12)",
+    padding: "9px 14px",
+    background: "rgba(255, 253, 248, 0.84)",
+    color: "#5f473b",
     fontSize: "0.9rem",
     cursor: "pointer",
   },

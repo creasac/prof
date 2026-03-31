@@ -4,7 +4,7 @@ import { privateProfileSchema, type PrivateProfile } from "@prof/contracts";
 
 import { fetchApi } from "./api";
 
-export async function loadPrivateProfile(username: string): Promise<PrivateProfile | null> {
+export async function loadProfile(username: string): Promise<PrivateProfile | null> {
   const response = await fetchApi(`/api/profile/${encodeURIComponent(username)}`);
 
   if (response.status === 404) {
@@ -18,3 +18,5 @@ export async function loadPrivateProfile(username: string): Promise<PrivateProfi
 
   return privateProfileSchema.parse(await response.json());
 }
+
+export const loadPrivateProfile = loadProfile;

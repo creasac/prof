@@ -363,23 +363,35 @@ export async function syncCourseForUser(options: {
   });
 }
 
-export async function listCoursesForUser(userId: string) {
-  await backfillLegacyCoursesForUser(userId);
+export async function readProfileForViewer(options: {
+  viewerUserId: string | null;
+  username: string;
+}) {
+  const normalizedUsername = normalizeUsername(options.username);
+  const [ownerRecord] = await requireDb()
+    .select({
+      id: user.id,
+      username: user.username,
+    })
+    .from(user)
+    .where(eq(user.username, normalizedUsername))
+    .limit(1);
 
-  const courseRecords = await requireDb().select().from(course).where(eq(course.ownerId, userId)).orderBy(desc(course.updatedAt));
+  if (!ownerRecord?.username) {
+    return null;
+  }
+
+  await backfillLegacyCoursesForUser(ownerRecord.id);
+
+  const isOwner = ownerRecord.id === options.viewerUserId;
+  const courseRecords = await requireDb()
+    .select()
+    .from(course)
+    .where(isOwner ? eq(course.ownerId, ownerRecord.id) : and(eq(course.ownerId, ownerRecord.id), eq(course.visibility, "public")))
+    .orderBy(desc(course.updatedAt));
   const summaries: CourseSummary[] = [];
 
   for (const record of courseRecords) {
-    const [ownerRecord] = await requireDb()
-      .select({ username: user.username })
-      .from(user)
-      .where(eq(user.id, record.ownerId))
-      .limit(1);
-
-    if (!ownerRecord?.username) {
-      continue;
-    }
-
     summaries.push(
       courseSummarySchema.parse({
         courseId: record.id,
@@ -393,7 +405,10 @@ export async function listCoursesForUser(userId: string) {
     );
   }
 
-  return summaries;
+  return {
+    username: ownerRecord.username,
+    courses: summaries,
+  };
 }
 
 export async function readCourseForViewer(options: {
@@ -424,6 +439,86 @@ export async function readCourseForViewer(options: {
     snapshot: courseRecord.snapshot,
     isOwner,
     updatedAt: courseRecord.updatedAt.toISOString(),
+  });
+}
+
+export async function forkCourseForUser(options: {
+  userId: string;
+  username: string | null;
+  ownerUsername: string;
+  courseSlug: string;
+}) {
+  const { userId, username, ownerUsername, courseSlug } = options;
+  if (!username) {
+    return null;
+  }
+
+  const sourceCourse = await readCourseForViewer({
+    viewerUserId: userId,
+    ownerUsername,
+    courseSlug,
+  });
+
+  if (!sourceCourse) {
+    return null;
+  }
+
+  if (sourceCourse.isOwner) {
+    return sourceCourse;
+  }
+
+  const forkedCourse = await createCourseLineage({
+    ownerId: userId,
+    ownerUsername: username,
+    preferredSlug: sourceCourse.courseSlug,
+    title: sourceCourse.title,
+    artifactCount: sourceCourse.artifactCount,
+    snapshot: sourceCourse.snapshot,
+  });
+
+  return persistedCourseSchema.parse({
+    courseId: forkedCourse.id,
+    ownerUsername: forkedCourse.ownerUsername ?? username,
+    courseSlug: forkedCourse.slug,
+    title: forkedCourse.title,
+    visibility: courseVisibilitySchema.parse(forkedCourse.visibility),
+    artifactCount: forkedCourse.artifactCount,
+    snapshot: forkedCourse.snapshot,
+    isOwner: true,
+    updatedAt: forkedCourse.updatedAt.toISOString(),
+  });
+}
+
+export async function updateCourseVisibilityForOwner(options: {
+  userId: string;
+  username: string | null;
+  courseSlug: string;
+  visibility: "private" | "public";
+}) {
+  const { userId, username, courseSlug, visibility } = options;
+  if (!username) {
+    return null;
+  }
+
+  const courseRecord = await readCourseLineageByOwnerAndSlug(username, courseSlug);
+  if (!courseRecord || courseRecord.ownerId !== userId) {
+    return null;
+  }
+
+  if (courseRecord.visibility !== visibility) {
+    await requireDb()
+      .update(course)
+      .set({
+        visibility,
+        updatedAt: new Date(),
+      })
+      .where(eq(course.id, courseRecord.id));
+  }
+
+  return readCourseForViewer({
+    viewerUserId: userId,
+    ownerUsername: username,
+    courseSlug,
   });
 }
 

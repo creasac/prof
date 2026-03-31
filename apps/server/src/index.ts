@@ -3,6 +3,7 @@ import cors from "cors";
 import {
   flashcardSchema,
   appConfigSchema,
+  courseVisibilitySchema,
   lessonQuizRequestSchema,
   lessonQuizResponseSchema,
   learnSessionSnapshotSchema,
@@ -34,7 +35,12 @@ import { ZodError, z } from "zod";
 import { authHandler, getAuthSession, isAuthEnabled } from "./auth.js";
 import { isDatabaseEnabled } from "./db/client.js";
 import { env } from "./env.js";
-import { listCoursesForUser, readCourseForViewer } from "./courses.js";
+import {
+  forkCourseForUser,
+  readCourseForViewer,
+  readProfileForViewer,
+  updateCourseVisibilityForOwner,
+} from "./courses.js";
 import {
   readLearnSessionForUser,
   saveLearnSessionForUser,
@@ -183,29 +189,91 @@ app.put("/api/learn/sessions/:sessionId", async (req, res, next) => {
 
 app.get("/api/profile/:username", async (req, res, next) => {
   try {
-    const authSession = await requireUserSession(req, res);
-    if (!authSession) {
-      return;
-    }
+    const authSession = await getAuthSession(req.headers);
+    const profile = await readProfileForViewer({
+      viewerUserId: authSession?.user?.id ?? null,
+      username: req.params.username,
+    });
 
-    const sessionUsername = getSessionUsername(authSession);
-    const requestedUsername = req.params.username.trim().toLowerCase();
-
-    if (!sessionUsername || sessionUsername !== requestedUsername) {
+    if (!profile) {
       res.status(404).json({
         error: "Profile not found.",
       });
       return;
     }
 
-    const courses = await listCoursesForUser(authSession.user.id);
+    res.json(privateProfileSchema.parse(profile));
+  } catch (error) {
+    next(error);
+  }
+});
 
-    res.json(
-      privateProfileSchema.parse({
-        username: sessionUsername,
-        courses,
-      }),
-    );
+app.post("/api/courses/:username/:courseSlug/fork", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const username = getSessionUsername(authSession);
+    const forkedCourse = await forkCourseForUser({
+      userId: authSession.user.id,
+      username,
+      ownerUsername: req.params.username,
+      courseSlug: req.params.courseSlug,
+    });
+
+    if (!forkedCourse) {
+      res.status(404).json({
+        error: "Course not found.",
+      });
+      return;
+    }
+
+    res.json(persistedCourseSchema.parse(forkedCourse));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/courses/:username/:courseSlug", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const username = getSessionUsername(authSession);
+    const requestedUsername = req.params.username.trim().toLowerCase();
+
+    if (!username || username !== requestedUsername) {
+      res.status(404).json({
+        error: "Course not found.",
+      });
+      return;
+    }
+
+    const body = z
+      .object({
+        visibility: courseVisibilitySchema,
+      })
+      .parse(req.body);
+
+    const updatedCourse = await updateCourseVisibilityForOwner({
+      userId: authSession.user.id,
+      username,
+      courseSlug: req.params.courseSlug,
+      visibility: body.visibility,
+    });
+
+    if (!updatedCourse) {
+      res.status(404).json({
+        error: "Course not found.",
+      });
+      return;
+    }
+
+    res.json(persistedCourseSchema.parse(updatedCourse));
   } catch (error) {
     next(error);
   }

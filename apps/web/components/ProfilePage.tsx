@@ -6,7 +6,7 @@ import type { PrivateProfile } from "@prof/contracts";
 
 import { authClient } from "../lib/auth-client";
 import { buildCourseHref } from "../lib/course-route";
-import { loadPrivateProfile } from "../lib/profile-api";
+import { loadProfile } from "../lib/profile-api";
 
 type ProfilePageProps = {
   username: string;
@@ -39,6 +39,7 @@ export function ProfilePage({ username }: ProfilePageProps) {
   const normalizedUsername = username.toLowerCase();
   const sessionUsername =
     session?.user && "username" in session.user && typeof session.user.username === "string" ? session.user.username : "";
+  const isOwnerProfile = Boolean(session?.user?.id && sessionUsername && sessionUsername === normalizedUsername);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,22 +49,17 @@ export function ProfilePage({ username }: ProfilePageProps) {
         return;
       }
 
-      if (!session?.user?.id || !sessionUsername || sessionUsername !== normalizedUsername) {
-        if (!cancelled) {
-          setProfile(null);
-          setPageError(null);
-          setIsLoading(false);
-        }
-        return;
-      }
-
       setIsLoading(true);
+      setProfile(null);
       setPageError(null);
 
       try {
-        const nextProfile = await loadPrivateProfile(normalizedUsername);
+        const nextProfile = await loadProfile(normalizedUsername);
         if (!cancelled) {
           setProfile(nextProfile);
+          if (!nextProfile) {
+            setPageError("Profile not found.");
+          }
         }
       } catch (error) {
         if (!cancelled) {
@@ -81,7 +77,7 @@ export function ProfilePage({ username }: ProfilePageProps) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthPending, normalizedUsername, session?.user?.id, sessionUsername]);
+  }, [isAuthPending, normalizedUsername, session?.user?.id]);
 
   function openCourse(courseId: string) {
     setPendingCourseId(courseId);
@@ -91,11 +87,14 @@ export function ProfilePage({ username }: ProfilePageProps) {
     return null;
   }
 
-  if (!session?.user?.id || !sessionUsername || sessionUsername !== normalizedUsername) {
+  if (!profile) {
     return (
       <main style={styles.page}>
         <section style={styles.shell}>
-          <h1 style={styles.title}>Private</h1>
+          <header style={styles.header}>
+            <h1 style={styles.title}>@{normalizedUsername}</h1>
+          </header>
+          <p style={styles.emptyText}>{pageError ?? "Profile not found."}</p>
         </section>
       </main>
     );
@@ -139,13 +138,18 @@ export function ProfilePage({ username }: ProfilePageProps) {
                     <p style={styles.cardMeta}>
                       {getArtifactLabel(course.artifactCount)} · {formatUpdatedAt(course.updatedAt)}
                     </p>
+                    {isOwnerProfile ? (
+                      <span style={styles.visibilityPill}>
+                        {course.visibility === "public" ? "Public" : "Private"}
+                      </span>
+                    ) : null}
                   </div>
                 </button>
               );
             })}
           </div>
         ) : (
-          <p style={styles.emptyText}>No materials yet.</p>
+          <p style={styles.emptyText}>{isOwnerProfile ? "No materials yet." : "No public courses yet."}</p>
         )}
       </section>
     </main>
@@ -224,6 +228,18 @@ const styles: Record<string, CSSProperties> = {
     fontSize: "0.84rem",
     lineHeight: 1.4,
     color: "#6a5447",
+  },
+  visibilityPill: {
+    alignSelf: "flex-start",
+    borderRadius: "999px",
+    border: "1px solid rgba(138, 55, 21, 0.14)",
+    background: "rgba(255, 247, 240, 0.9)",
+    color: "#8a3715",
+    padding: "4px 10px",
+    fontSize: "0.76rem",
+    fontWeight: 600,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
   },
   emptyText: {
     margin: 0,
