@@ -12,6 +12,12 @@ const rawEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
+  DATABASE_URL: z.string().optional(),
+  DATABASE_SSL: z.enum(["true", "false"]).default("false"),
+  AUTH_SECRET: z.string().optional(),
+  AUTH_BASE_URL: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
   VOICE_PROVIDER: z.enum(["none", "elevenlabs"]).default("none"),
   ELEVENLABS_AGENT_ID: z.string().optional(),
   ELEVENLABS_API_KEY: z.string().optional(),
@@ -30,5 +36,6 @@ const parsed = rawEnvSchema.parse(process.env);
 
 export const env = {
   ...parsed,
+  DATABASE_URL: parsed.DATABASE_URL?.trim() || undefined,
   GOOGLE_GENAI_USE_VERTEXAI: parsed.GOOGLE_GENAI_USE_VERTEXAI === "true",
 };

@@ -5,6 +5,7 @@ import {
   appConfigSchema,
   lessonQuizRequestSchema,
   lessonQuizResponseSchema,
+  learnSessionSnapshotSchema,
   plannedTopicBlockRequestSchema,
   plannedTopicBlockResponseSchema,
   quizBlockSchema,
@@ -28,7 +29,10 @@ import {
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { ZodError, z } from "zod";
 
+import { authHandler, getAuthSession, isAuthEnabled } from "./auth.js";
+import { isDatabaseEnabled } from "./db/client.js";
 import { env } from "./env.js";
+import { readLearnSessionForUser, saveLearnSessionForUser } from "./learn-sessions.js";
 import {
   normalizePlanningResult,
   normalizeStreamedClarification,
@@ -61,14 +65,29 @@ const corsOrigin = env.NODE_ENV === "development" ? true : allowedOrigins.length
 app.use(
   cors({
     origin: corsOrigin,
+    credentials: true,
   }),
 );
+
+app.all("/api/auth/*", async (req, res) => {
+  if (!authHandler) {
+    res.status(503).json({
+      error: "Authentication is not configured. Set DATABASE_URL and AUTH_SECRET to enable auth.",
+    });
+    return;
+  }
+
+  await authHandler(req, res);
+});
+
 app.use(express.json({ limit: "2mb" }));
 
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
     capabilities: {
+      auth: isAuthEnabled,
+      persistence: isDatabaseEnabled,
       voice: isVoiceEnabled(),
       reasoning: isReasoningEnabled(),
       search: isSearchEnabled(),
@@ -90,6 +109,43 @@ app.get("/api/config", (_req, res) => {
       },
     }),
   );
+});
+
+app.get("/api/learn/sessions/:sessionId", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const sessionRecord = await readLearnSessionForUser(authSession.user.id, req.params.sessionId);
+
+    if (!sessionRecord) {
+      res.status(404).json({
+        error: `Learn session ${req.params.sessionId} was not found.`,
+      });
+      return;
+    }
+
+    res.json(sessionRecord);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/learn/sessions/:sessionId", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const snapshot = learnSessionSnapshotSchema.parse(req.body);
+    const persistedSession = await saveLearnSessionForUser(authSession.user.id, req.params.sessionId, snapshot);
+    res.json(persistedSession);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post("/api/voice/session", async (_req, res, next) => {
@@ -587,6 +643,26 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 app.listen(env.PORT, () => {
   console.log(`prof server listening on http://localhost:${env.PORT}`);
 });
+
+async function requireUserSession(req: express.Request, res: express.Response) {
+  if (!isAuthEnabled) {
+    res.status(503).json({
+      error: "Authentication is not configured. Set DATABASE_URL and AUTH_SECRET to enable auth.",
+    });
+    return null;
+  }
+
+  const authSession = await getAuthSession(req.headers);
+
+  if (!authSession?.user?.id) {
+    res.status(401).json({
+      error: "You must be signed in to access saved learn sessions.",
+    });
+    return null;
+  }
+
+  return authSession;
+}
 
 function writeNdjson(res: express.Response, value: unknown) {
   res.write(`${JSON.stringify(value)}\n`);

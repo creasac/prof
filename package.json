@@ -11,6 +11,8 @@
     "dev:web": "npm run dev -w apps/web",
     "dev:server": "npm run dev -w apps/server",
     "build:web": "npm run build -w apps/web",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "npm run db:migrate -w apps/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "elevenlabs:pull-agent": "node scripts/elevenlabs-agent.mjs pull",
     "elevenlabs:build-agent": "node scripts/elevenlabs-agent.mjs build",

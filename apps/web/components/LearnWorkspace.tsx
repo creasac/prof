@@ -9,6 +9,7 @@ import {
   type CoursePlan,
   type Flashcard,
   type GroundingSource,
+  type LearnSessionSnapshot,
   type LessonBlock,
   type PlanRequestType,
   type PlanTopic,
@@ -36,7 +37,10 @@ import {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { authClient } from "../lib/auth-client";
+import { fetchApi } from "../lib/api";
 import { readLearnSessionSnapshot, writeLearnSessionSnapshot } from "../lib/learn-session";
+import { loadRemoteLearnSession, saveRemoteLearnSession } from "../lib/learn-session-api";
 import { buildLearnHref, buildLearnQuizHref, createLearnSessionId, parseLearnRouteState } from "../lib/learn-route";
 import { createElevenLabsVoiceSession, type VoiceSessionHandle, type VoiceToolCallPayload } from "../lib/voice/elevenlabs";
 import type { QuizProgress } from "../lib/quiz";
@@ -44,8 +48,6 @@ import { PlannerView } from "./PlannerUi";
 import { PromptComposer } from "./PromptComposer";
 import { BlockView, Icon, IconText } from "./TutorUi";
 
-const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 const DESKTOP_MEDIA_QUERY = "(min-width: 960px)";
 const DEFAULT_LEFT_PANE_PERCENT = 56;
 const MIN_LEFT_PANE_PERCENT = 42;
@@ -79,44 +81,6 @@ const LIVE_ARTIFACT_KEYWORDS = [
   "write a lesson",
   "write lesson",
 ];
-
-function getApiBaseUrl() {
-  if (typeof window === "undefined") {
-    return DEFAULT_API_BASE_URL;
-  }
-
-  try {
-    const configuredUrl = new URL(DEFAULT_API_BASE_URL);
-    const currentHostname = window.location.hostname;
-
-    if (!LOOPBACK_HOSTS.has(configuredUrl.hostname) || LOOPBACK_HOSTS.has(currentHostname)) {
-      return configuredUrl.toString().replace(/\/$/, "");
-    }
-
-    configuredUrl.hostname = currentHostname;
-    return configuredUrl.toString().replace(/\/$/, "");
-  } catch {
-    return DEFAULT_API_BASE_URL;
-  }
-}
-
-function buildApiUrl(path: string) {
-  return `${getApiBaseUrl()}${path}`;
-}
-
-async function fetchApi(path: string, init?: RequestInit) {
-  const url = buildApiUrl(path);
-
-  try {
-    return await fetch(url, init);
-  } catch (error) {
-    if (error instanceof TypeError) {
-      throw new Error(`Failed to reach the API at ${url}.`);
-    }
-
-    throw error;
-  }
-}
 
 const LIVE_REASONING_TOOL_NAME = "request_reasoning";
 const REASONING_REQUEST_TYPES = ["new_content", "update_content", "general_query"] as const;
@@ -513,6 +477,7 @@ type LearnWorkspaceProps = {
 export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: authSession, isPending: isAuthPending } = authClient.useSession();
   const routeState = parseLearnRouteState(searchParams);
   const shouldPrefillPlannerInput = !routeState.autoStartAction;
   const autoStartKey = routeState.autoStartAction
@@ -590,6 +555,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const splitterPointerIdRef = useRef<number | null>(null);
   const generatedSectionRef = useRef<HTMLElement | null>(null);
   const companionQuizRequestRef = useRef<string | null>(null);
+  const remoteSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     void loadConfig();
@@ -665,88 +631,122 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }, [plan, generatedBlock, generatedQuiz, selectedTopicId, goal, liveStatus]);
 
   useEffect(() => {
-    setIsSessionHydrated(false);
-    setPlannerError(null);
-    setTopicError(null);
-    setLiveError(null);
-    setLiveStatus("Disconnected");
-    setIsMicActive(false);
+    let cancelled = false;
 
-    if (!sessionId) {
+    async function hydrateSession() {
+      setIsSessionHydrated(false);
+      setPlannerError(null);
+      setTopicError(null);
+      setLiveError(null);
+      setLiveStatus("Disconnected");
+      setIsMicActive(false);
+
+      if (!sessionId) {
+        if (!cancelled) {
+          setIsSessionHydrated(true);
+        }
+        return;
+      }
+
+      if (isAuthPending) {
+        return;
+      }
+
+      const localSnapshot = readLearnSessionSnapshot(sessionId);
+      let snapshot: LearnSessionSnapshot | null = localSnapshot;
+
+      if (authSession?.user?.id) {
+        try {
+          const remoteSession = await loadRemoteLearnSession(sessionId);
+          if (!cancelled && remoteSession) {
+            snapshot = remoteSession.snapshot;
+          }
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      if (snapshot) {
+        setGoal(snapshot.goal);
+        setPlannerInput(snapshot.plannerInput);
+        setPreferredBlockType(snapshot.preferredBlockType);
+        setUseWebSearch(snapshot.useWebSearch);
+        setPlan(snapshot.plan);
+        setPlanClarification(snapshot.planClarification);
+        setPlanSources(snapshot.planSources);
+        setStreamedRequestType(null);
+        setStreamedPlanTitle("");
+        setStreamedTopics([]);
+        setSelectedTopicId(snapshot.selectedTopicId);
+        setStreamedGeneratedBlock(null);
+        setGeneratedBlock(snapshot.generatedBlock);
+        setGeneratedTopicId(snapshot.generatedTopicId);
+        setGeneratedQuiz(
+          snapshot.generatedQuiz ?? (snapshot.generatedBlock?.type === "quiz" ? snapshot.generatedBlock : null),
+        );
+        setGeneratedQuizTopicId(
+          snapshot.generatedQuizTopicId ?? (snapshot.generatedBlock?.type === "quiz" ? snapshot.generatedTopicId : null),
+        );
+        setGeneratedQuizError(snapshot.generatedQuizError);
+        setQuizProgress(snapshot.quizProgress);
+        setQuizResultsByTopic(snapshot.quizResultsByTopic ?? {});
+        setIsGeneratingQuiz(false);
+        companionQuizRequestRef.current = null;
+        setBlockSources(snapshot.blockSources);
+        const storedLiveMessages = snapshot.liveMessages ?? [];
+        setLiveMessages(storedLiveMessages);
+        lastLiveUserMessageRef.current =
+          [...storedLiveMessages].reverse().find((message) => message.role === "user")?.content ?? null;
+        setLiveInputDraft(snapshot.liveInputDraft ?? snapshot.inputTranscript ?? "");
+        setLiveOutputDraft(snapshot.liveOutputDraft ?? snapshot.outputTranscript ?? "");
+        setLeftPanePercent(clampPanePercent(snapshot.leftPanePercent));
+        setIsLearnPanelCollapsed(snapshot.learnPanelCollapsed ?? false);
+        liveGoalRef.current = snapshot.liveGoal;
+      } else {
+        setGoal(routeState.goal);
+        setPlannerInput(shouldPrefillPlannerInput ? routeState.goal : "");
+        setPreferredBlockType(routeState.preferredBlockType);
+        setUseWebSearch(routeState.useWebSearch);
+        setPlan(null);
+        setPlanClarification(null);
+        setPlanSources([]);
+        setStreamedRequestType(null);
+        setStreamedPlanTitle("");
+        setStreamedTopics([]);
+        setSelectedTopicId(null);
+        setStreamedGeneratedBlock(null);
+        setGeneratedBlock(null);
+        setGeneratedTopicId(null);
+        setGeneratedQuiz(null);
+        setGeneratedQuizTopicId(null);
+        setGeneratedQuizError(null);
+        setQuizProgress(null);
+        setQuizResultsByTopic({});
+        setIsGeneratingQuiz(false);
+        companionQuizRequestRef.current = null;
+        setBlockSources([]);
+        setLiveMessages([]);
+        setLiveInputDraft("");
+        setLiveOutputDraft("");
+        setLeftPanePercent(DEFAULT_LEFT_PANE_PERCENT);
+        setIsLearnPanelCollapsed(false);
+        liveGoalRef.current = null;
+        lastLiveUserMessageRef.current = null;
+      }
+
       setIsSessionHydrated(true);
-      return;
     }
 
-    const snapshot = readLearnSessionSnapshot(sessionId);
+    void hydrateSession();
 
-    if (snapshot) {
-      setGoal(snapshot.goal);
-      setPlannerInput(snapshot.plannerInput);
-      setPreferredBlockType(snapshot.preferredBlockType);
-      setUseWebSearch(snapshot.useWebSearch);
-      setPlan(snapshot.plan);
-      setPlanClarification(snapshot.planClarification);
-      setPlanSources(snapshot.planSources);
-      setStreamedRequestType(null);
-      setStreamedPlanTitle("");
-      setStreamedTopics([]);
-      setSelectedTopicId(snapshot.selectedTopicId);
-      setStreamedGeneratedBlock(null);
-      setGeneratedBlock(snapshot.generatedBlock);
-      setGeneratedTopicId(snapshot.generatedTopicId);
-      setGeneratedQuiz(snapshot.generatedQuiz ?? (snapshot.generatedBlock?.type === "quiz" ? snapshot.generatedBlock : null));
-      setGeneratedQuizTopicId(
-        snapshot.generatedQuizTopicId ?? (snapshot.generatedBlock?.type === "quiz" ? snapshot.generatedTopicId : null),
-      );
-      setGeneratedQuizError(snapshot.generatedQuizError);
-      setQuizProgress(snapshot.quizProgress);
-      setQuizResultsByTopic(snapshot.quizResultsByTopic ?? {});
-      setIsGeneratingQuiz(false);
-      companionQuizRequestRef.current = null;
-      setBlockSources(snapshot.blockSources);
-      const storedLiveMessages = snapshot.liveMessages ?? [];
-      setLiveMessages(storedLiveMessages);
-      lastLiveUserMessageRef.current =
-        [...storedLiveMessages].reverse().find((message) => message.role === "user")?.content ?? null;
-      setLiveInputDraft(snapshot.liveInputDraft ?? snapshot.inputTranscript ?? "");
-      setLiveOutputDraft(snapshot.liveOutputDraft ?? snapshot.outputTranscript ?? "");
-      setLeftPanePercent(clampPanePercent(snapshot.leftPanePercent));
-      setIsLearnPanelCollapsed(snapshot.learnPanelCollapsed ?? false);
-      liveGoalRef.current = snapshot.liveGoal;
-    } else {
-      setGoal(routeState.goal);
-      setPlannerInput(shouldPrefillPlannerInput ? routeState.goal : "");
-      setPreferredBlockType(routeState.preferredBlockType);
-      setUseWebSearch(routeState.useWebSearch);
-      setPlan(null);
-      setPlanClarification(null);
-      setPlanSources([]);
-      setStreamedRequestType(null);
-      setStreamedPlanTitle("");
-      setStreamedTopics([]);
-      setSelectedTopicId(null);
-      setStreamedGeneratedBlock(null);
-      setGeneratedBlock(null);
-      setGeneratedTopicId(null);
-      setGeneratedQuiz(null);
-      setGeneratedQuizTopicId(null);
-      setGeneratedQuizError(null);
-      setQuizProgress(null);
-      setQuizResultsByTopic({});
-      setIsGeneratingQuiz(false);
-      companionQuizRequestRef.current = null;
-      setBlockSources([]);
-      setLiveMessages([]);
-      setLiveInputDraft("");
-      setLiveOutputDraft("");
-      setLeftPanePercent(DEFAULT_LEFT_PANE_PERCENT);
-      setIsLearnPanelCollapsed(false);
-      liveGoalRef.current = null;
-      lastLiveUserMessageRef.current = null;
-    }
-
-    setIsSessionHydrated(true);
-  }, [sessionId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession?.user?.id, isAuthPending, routeState.goal, routeState.preferredBlockType, routeState.useWebSearch, sessionId, shouldPrefillPlannerInput]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(DESKTOP_MEDIA_QUERY);
@@ -812,7 +812,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       return;
     }
 
-    writeLearnSessionSnapshot(sessionId, {
+    const snapshot: LearnSessionSnapshot = {
       goal,
       plannerInput,
       preferredBlockType,
@@ -835,8 +835,33 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       leftPanePercent,
       learnPanelCollapsed: isLearnPanelCollapsed,
       liveGoal: liveGoalRef.current,
-    });
+    };
+
+    writeLearnSessionSnapshot(sessionId, snapshot);
+
+    if (remoteSaveTimeoutRef.current) {
+      clearTimeout(remoteSaveTimeoutRef.current);
+      remoteSaveTimeoutRef.current = null;
+    }
+
+    if (!authSession?.user?.id) {
+      return;
+    }
+
+    remoteSaveTimeoutRef.current = setTimeout(() => {
+      void saveRemoteLearnSession(sessionId, snapshot).catch((error) => {
+        console.error(error);
+      });
+    }, 500);
+
+    return () => {
+      if (remoteSaveTimeoutRef.current) {
+        clearTimeout(remoteSaveTimeoutRef.current);
+        remoteSaveTimeoutRef.current = null;
+      }
+    };
   }, [
+    authSession?.user?.id,
     blockSources,
     generatedBlock,
     generatedTopicId,

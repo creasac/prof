@@ -38,7 +38,7 @@ export default function HomePage() {
       <section style={styles.shell}>
         <div style={styles.hero}>
           <Image src="/icon.png" alt="Prof." width={120} height={120} style={styles.logo} priority />
-          <h1 style={styles.tagline}>learn anything</h1>
+          <h1 style={styles.tagline}>knowledge liberates</h1>
         </div>
 
         <PromptComposer

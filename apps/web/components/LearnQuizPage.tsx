@@ -1,11 +1,12 @@
 "use client";
 
-import type { QuizBlock } from "@prof/contracts";
+import type { LearnSessionSnapshot, QuizBlock } from "@prof/contracts";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
-import type { LearnSessionSnapshot } from "../lib/learn-session";
+import { authClient } from "../lib/auth-client";
 import { readLearnSessionSnapshot, writeLearnSessionSnapshot } from "../lib/learn-session";
+import { loadRemoteLearnSession, saveRemoteLearnSession } from "../lib/learn-session-api";
 import { buildLearnHref } from "../lib/learn-route";
 import {
   createEmptyQuizProgress,
@@ -22,6 +23,7 @@ type LearnQuizPageProps = {
 };
 
 export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
+  const { data: authSession, isPending: isAuthPending } = authClient.useSession();
   const [snapshot, setSnapshot] = useState<LearnSessionSnapshot | null>(null);
   const [quiz, setQuiz] = useState<QuizBlock | null>(null);
   const [topicId, setTopicId] = useState<string | null>(null);
@@ -30,17 +32,47 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    const nextSnapshot = readLearnSessionSnapshot(sessionId);
-    const nextQuiz = getGeneratedQuiz(nextSnapshot);
-    const nextTopicId = nextSnapshot?.generatedQuizTopicId ?? nextSnapshot?.generatedTopicId ?? null;
+    let cancelled = false;
 
-    setSnapshot(nextSnapshot);
-    setQuiz(nextQuiz);
-    setTopicId(nextTopicId);
-    setProgress(nextQuiz ? ensureQuizProgress(nextQuiz, nextSnapshot?.quizProgress, nextTopicId) : null);
-    setCurrentQuestionIndex(0);
-    setIsLoaded(true);
-  }, [sessionId]);
+    async function hydrateQuiz() {
+      if (isAuthPending) {
+        return;
+      }
+
+      let nextSnapshot = readLearnSessionSnapshot(sessionId);
+
+      if (authSession?.user?.id) {
+        try {
+          const remoteSession = await loadRemoteLearnSession(sessionId);
+          if (!cancelled && remoteSession) {
+            nextSnapshot = remoteSession.snapshot;
+          }
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      const nextQuiz = getGeneratedQuiz(nextSnapshot);
+      const nextTopicId = nextSnapshot?.generatedQuizTopicId ?? nextSnapshot?.generatedTopicId ?? null;
+
+      setSnapshot(nextSnapshot);
+      setQuiz(nextQuiz);
+      setTopicId(nextTopicId);
+      setProgress(nextQuiz ? ensureQuizProgress(nextQuiz, nextSnapshot?.quizProgress, nextTopicId) : null);
+      setCurrentQuestionIndex(0);
+      setIsLoaded(true);
+    }
+
+    void hydrateQuiz();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession?.user?.id, isAuthPending, sessionId]);
 
   useEffect(() => {
     if (!progress) {
@@ -68,9 +100,14 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
       }
 
       writeLearnSessionSnapshot(sessionId, nextSnapshot);
+      if (authSession?.user?.id) {
+        void saveRemoteLearnSession(sessionId, nextSnapshot).catch((error) => {
+          console.error(error);
+        });
+      }
       return nextSnapshot;
     });
-  }, [progress, quiz, sessionId, topicId]);
+  }, [authSession?.user?.id, progress, quiz, sessionId, topicId]);
 
   const result = useMemo(() => {
     if (!quiz || !progress || !progress.submitted) {

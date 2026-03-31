@@ -150,6 +150,62 @@ export const planningClarificationSchema = z.object({
   examples: z.array(z.string().min(1).max(120)).max(3).default([]),
 });
 
+export const groundingSourceSchema = z.object({
+  title: z.string().min(1),
+  uri: z.string().url(),
+});
+
+export const learnSessionMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1),
+});
+
+export const quizAnswerStateSchema = z.object({
+  selectedIndex: z.number().int().nullable(),
+  selectedIndexes: z.array(z.number().int()).default([]),
+  text: z.string(),
+});
+
+export const quizProgressSchema = z.object({
+  topicId: z.string().nullable(),
+  submitted: z.boolean(),
+  answers: z.array(quizAnswerStateSchema),
+});
+
+export const learnSessionSnapshotSchema = z.object({
+  goal: z.string(),
+  plannerInput: z.string(),
+  preferredBlockType: tutorBlockTypeSchema.or(z.literal("")),
+  useWebSearch: z.boolean(),
+  plan: coursePlanSchema.nullable(),
+  planClarification: planningClarificationSchema.nullable(),
+  planSources: z.array(groundingSourceSchema),
+  selectedTopicId: z.string().nullable(),
+  generatedBlock: tutorBlockSchema.nullable(),
+  generatedTopicId: z.string().nullable(),
+  generatedQuiz: quizBlockSchema.nullable(),
+  generatedQuizTopicId: z.string().nullable(),
+  generatedQuizError: z.string().nullable(),
+  quizProgress: quizProgressSchema.nullable(),
+  quizResultsByTopic: z.record(z.string(), z.number()).optional().default({}),
+  blockSources: z.array(groundingSourceSchema),
+  liveMessages: z.array(learnSessionMessageSchema).optional().default([]),
+  liveInputDraft: z.string().optional().default(""),
+  liveOutputDraft: z.string().optional().default(""),
+  inputTranscript: z.string().optional(),
+  outputTranscript: z.string().optional(),
+  leftPanePercent: z.number(),
+  learnPanelCollapsed: z.boolean(),
+  liveGoal: z.string().nullable(),
+});
+
+export const persistedLearnSessionSchema = z.object({
+  sessionId: z.string().min(1),
+  snapshot: learnSessionSnapshotSchema,
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+});
+
 export const reasoningBlockRequestSchema = z.object({
   goal: z.string().min(1).max(1000),
   learnerContext: z.string().max(2000).optional().default(""),
@@ -229,11 +285,6 @@ export const planningModelResultSchema = z.object({
   result: z.enum(["clarification", "plan"]),
   clarification: planningModelClarificationSchema.optional(),
   plan: planningModelPlanSchema.optional(),
-});
-
-export const groundingSourceSchema = z.object({
-  title: z.string().min(1),
-  uri: z.string().url(),
 });
 
 export const reasoningBlockResponseSchema = z.object({
@@ -445,6 +496,9 @@ export type LessonBlueprint = z.infer<typeof lessonBlueprintSchema>;
 export type LessonPlan = z.infer<typeof lessonPlanSchema>;
 export type LessonQuizRequest = z.infer<typeof lessonQuizRequestSchema>;
 export type LessonQuizResponse = z.infer<typeof lessonQuizResponseSchema>;
+export type LearnSessionMessage = z.infer<typeof learnSessionMessageSchema>;
+export type LearnSessionSnapshot = z.infer<typeof learnSessionSnapshotSchema>;
+export type PersistedLearnSession = z.infer<typeof persistedLearnSessionSchema>;
 export type VoiceSessionResponse = z.infer<typeof voiceSessionResponseSchema>;
 export type CoursePlan = z.infer<typeof coursePlanSchema>;
 export type FlatCoursePlan = z.infer<typeof flatCoursePlanSchema>;
@@ -457,6 +511,8 @@ export type PlannedTopicBlockResponse = z.infer<typeof plannedTopicBlockResponse
 export type PlanningClarification = z.infer<typeof planningClarificationSchema>;
 export type PlanningMode = z.infer<typeof planningModeSchema>;
 export type PlanningResult = z.infer<typeof planningResultSchema>;
+export type QuizAnswerState = z.infer<typeof quizAnswerStateSchema>;
+export type QuizProgress = z.infer<typeof quizProgressSchema>;
 export type QuizBlock = z.infer<typeof quizBlockSchema>;
 export type QuizQuestion = z.infer<typeof quizQuestionSchema>;
 export type ReasoningBlockRequest = z.infer<typeof reasoningBlockRequestSchema>;
