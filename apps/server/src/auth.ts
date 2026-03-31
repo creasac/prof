@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
+import { username } from "better-auth/plugins/username";
 
 import { env } from "./env.js";
 import { db, isDatabaseEnabled } from "./db/client.js";
@@ -37,6 +38,7 @@ export const auth = isAuthEnabled
         minPasswordLength: 8,
         autoSignIn: true,
       },
+      plugins: [username()],
       socialProviders: googleProvider,
       advanced: {
         useSecureCookies: env.NODE_ENV === "production",

@@ -1,17 +1,32 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type CSSProperties, type FormEvent } from "react";
 
 import { authClient } from "../lib/auth-client";
+import { buildProfileHref } from "../lib/profile-route";
+
+function getSessionUsername(session: ReturnType<typeof authClient.useSession>["data"]) {
+  if (!session?.user || !("username" in session.user)) {
+    return "";
+  }
+
+  return typeof session.user.username === "string" ? session.user.username : "";
+}
+
+function getAvatarLabel(username: string) {
+  return username.trim().charAt(0).toUpperCase() || "?";
+}
 
 export function AuthDock() {
   const { data: session, isPending, error, refetch } = authClient.useSession();
   const [mode, setMode] = useState<"sign_in" | "sign_up">("sign_in");
-  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const sessionUsername = getSessionUsername(session);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -20,8 +35,10 @@ export function AuthDock() {
 
     try {
       if (mode === "sign_up") {
+        const normalizedUsername = username.trim();
         const result = await authClient.signUp.email({
-          name: name.trim(),
+          name: normalizedUsername,
+          username: normalizedUsername,
           email: email.trim(),
           password,
         });
@@ -51,6 +68,35 @@ export function AuthDock() {
     }
   }
 
+  async function handleClaimUsername(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session?.user) {
+      return;
+    }
+
+    setFormError(null);
+    setIsSubmitting(true);
+
+    try {
+      const normalizedUsername = username.trim();
+      const result = await authClient.updateUser({
+        username: normalizedUsername,
+        name: session.user.name || normalizedUsername,
+      });
+
+      if (result.error) {
+        setFormError(result.error.message ?? "Failed to save username.");
+        return;
+      }
+
+      await refetch();
+    } catch (nextError) {
+      setFormError(nextError instanceof Error ? nextError.message : "Failed to save username.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   async function handleSignOut() {
     setFormError(null);
     setIsSubmitting(true);
@@ -70,13 +116,28 @@ export function AuthDock() {
     }
   }
 
+  if (session?.user && sessionUsername) {
+    return (
+      <aside style={{ ...styles.shell, width: "auto" }}>
+        <div style={{ ...styles.card, ...styles.accountCard }}>
+          <Link href={buildProfileHref(sessionUsername)} style={styles.avatarLink} aria-label={`${sessionUsername} profile`}>
+            {getAvatarLabel(sessionUsername)}
+          </Link>
+          <button type="button" style={styles.ghostButton} onClick={() => void handleSignOut()} disabled={isSubmitting}>
+            {isSubmitting ? "..." : "Sign out"}
+          </button>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside style={styles.shell}>
       <div style={styles.card}>
         <div style={styles.headerRow}>
           <div>
             <p style={styles.eyebrow}>Account</p>
-            <h2 style={styles.title}>{session?.user ? "Signed In" : "Sync Progress"}</h2>
+            <h2 style={styles.title}>{session?.user ? "Choose username" : "Sync Progress"}</h2>
           </div>
           {session?.user ? (
             <button type="button" style={styles.ghostButton} onClick={() => void handleSignOut()} disabled={isSubmitting}>
@@ -86,11 +147,20 @@ export function AuthDock() {
         </div>
 
         {session?.user ? (
-          <div style={styles.copyBlock}>
-            <p style={styles.bodyText}>{session.user.name || session.user.email}</p>
-            <p style={styles.subtleText}>{session.user.email}</p>
-            <p style={styles.subtleText}>Learn sessions now save to your account as well as local browser state.</p>
-          </div>
+          <form style={styles.form} onSubmit={(event) => void handleClaimUsername(event)}>
+            <input
+              style={styles.input}
+              type="text"
+              placeholder="Username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              minLength={3}
+              required
+            />
+            <button type="submit" style={styles.submitButton} disabled={isSubmitting || isPending}>
+              {isSubmitting ? "Saving..." : "Save username"}
+            </button>
+          </form>
         ) : (
           <>
             <div style={styles.modeRow}>
@@ -115,9 +185,10 @@ export function AuthDock() {
                 <input
                   style={styles.input}
                   type="text"
-                  placeholder="Name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Username"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  minLength={3}
                   required
                 />
               ) : null}
@@ -175,6 +246,12 @@ const styles: Record<string, CSSProperties> = {
     flexDirection: "column",
     gap: "12px",
   },
+  accountCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: "10px",
+    padding: "10px",
+  },
   headerRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -193,16 +270,6 @@ const styles: Record<string, CSSProperties> = {
     fontSize: "1rem",
     lineHeight: 1.1,
     color: "#422f24",
-  },
-  copyBlock: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-  },
-  bodyText: {
-    margin: 0,
-    color: "#422f24",
-    fontWeight: 600,
   },
   subtleText: {
     margin: 0,
@@ -257,6 +324,20 @@ const styles: Record<string, CSSProperties> = {
     color: "#5e493d",
     padding: "8px 12px",
     cursor: "pointer",
+  },
+  avatarLink: {
+    width: "42px",
+    height: "42px",
+    borderRadius: "999px",
+    border: "1px solid rgba(94, 73, 61, 0.16)",
+    background: "#5e493d",
+    color: "#fff7f2",
+    textDecoration: "none",
+    display: "grid",
+    placeItems: "center",
+    fontWeight: 700,
+    fontSize: "0.98rem",
+    letterSpacing: "0.01em",
   },
   errorText: {
     margin: 0,

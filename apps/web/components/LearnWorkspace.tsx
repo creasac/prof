@@ -10,6 +10,7 @@ import {
   type Flashcard,
   type GroundingSource,
   type LearnSessionSnapshot,
+  type LearnTopicArtifacts,
   type LessonBlock,
   type PlanRequestType,
   type PlanTopic,
@@ -40,7 +41,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { authClient } from "../lib/auth-client";
 import { fetchApi } from "../lib/api";
 import { readLearnSessionSnapshot, writeLearnSessionSnapshot } from "../lib/learn-session";
-import { loadRemoteLearnSession, saveRemoteLearnSession } from "../lib/learn-session-api";
+import { loadRemoteLearnCourse, loadRemoteLearnSession, saveRemoteLearnSession } from "../lib/learn-session-api";
 import { buildLearnHref, buildLearnQuizHref, createLearnSessionId, parseLearnRouteState } from "../lib/learn-route";
 import { createElevenLabsVoiceSession, type VoiceSessionHandle, type VoiceToolCallPayload } from "../lib/voice/elevenlabs";
 import type { QuizProgress } from "../lib/quiz";
@@ -421,6 +422,47 @@ function buildStreamedTopicBlock(preview: StreamedTopicBlockPreview): TutorBlock
   }
 }
 
+function getTopicArtifactsEntry(
+  topicArtifacts: Record<string, LearnTopicArtifacts>,
+  topicId: string | null | undefined,
+) {
+  if (!topicId) {
+    return null;
+  }
+
+  return topicArtifacts[topicId] ?? null;
+}
+
+function updateTopicArtifacts(
+  current: Record<string, LearnTopicArtifacts>,
+  topicId: string,
+  nextValue: Partial<LearnTopicArtifacts>,
+) {
+  const previous = current[topicId] ?? { block: null, quiz: null };
+
+  return {
+    ...current,
+    [topicId]: {
+      ...previous,
+      ...nextValue,
+    },
+  };
+}
+
+function createSeededSessionSnapshot(snapshot: LearnSessionSnapshot, courseId: string): LearnSessionSnapshot {
+  return {
+    ...snapshot,
+    courseId,
+    chatMessages: [],
+    liveMessages: [],
+    liveInputDraft: "",
+    liveOutputDraft: "",
+    inputTranscript: "",
+    outputTranscript: "",
+    liveGoal: null,
+  };
+}
+
 function normalizeTranscriptForCompare(text: string) {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -484,6 +526,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     ? [routeState.autoStartAction, routeState.goal, routeState.preferredBlockType, routeState.useWebSearch].join("|")
     : null;
 
+  const [courseId, setCourseId] = useState<string | null>(() => routeState.courseId ?? sessionId ?? null);
   const [goal, setGoal] = useState(() => routeState.goal);
   const [plannerInput, setPlannerInput] = useState(() => (shouldPrefillPlannerInput ? routeState.goal : ""));
   const [preferredBlockType, setPreferredBlockType] = useState<TutorBlockType | "">(
@@ -508,6 +551,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const [generatedQuizError, setGeneratedQuizError] = useState<string | null>(null);
   const [quizProgress, setQuizProgress] = useState<QuizProgress | null>(null);
   const [quizResultsByTopic, setQuizResultsByTopic] = useState<Record<string, number>>({});
+  const [topicArtifacts, setTopicArtifacts] = useState<Record<string, LearnTopicArtifacts>>({});
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [blockSources, setBlockSources] = useState<GroundingSource[]>([]);
   const [plannerError, setPlannerError] = useState<string | null>(null);
@@ -540,6 +584,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const generatedTopicIdRef = useRef<string | null>(null);
   const generatedBlockRef = useRef<TutorBlock | null>(null);
   const generatedQuizRef = useRef<QuizBlock | null>(null);
+  const topicArtifactsRef = useRef<Record<string, LearnTopicArtifacts>>({});
   const liveMessagesRef = useRef<ChatMessage[]>([]);
   const lastLiveStatusRef = useRef<{ text: string; at: number } | null>(null);
   const liveAudioStatusRef = useRef(false);
@@ -620,6 +665,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }, [generatedQuiz]);
 
   useEffect(() => {
+    topicArtifactsRef.current = topicArtifacts;
+  }, [topicArtifacts]);
+
+  useEffect(() => {
     liveMessagesRef.current = liveMessages;
   }, [liveMessages]);
 
@@ -643,6 +692,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
       if (!sessionId) {
         if (!cancelled) {
+          setCourseId(routeState.courseId ?? null);
           setIsSessionHydrated(true);
         }
         return;
@@ -666,11 +716,23 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         }
       }
 
+      if (!snapshot && routeState.courseId && authSession?.user?.id) {
+        try {
+          const remoteCourse = await loadRemoteLearnCourse(routeState.courseId);
+          if (!cancelled && remoteCourse) {
+            snapshot = createSeededSessionSnapshot(remoteCourse.snapshot, remoteCourse.courseId);
+          }
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
       if (cancelled) {
         return;
       }
 
       if (snapshot) {
+        setCourseId(snapshot.courseId ?? routeState.courseId ?? sessionId ?? null);
         setGoal(snapshot.goal);
         setPlannerInput(snapshot.plannerInput);
         setPreferredBlockType(snapshot.preferredBlockType);
@@ -694,9 +756,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         setGeneratedQuizError(snapshot.generatedQuizError);
         setQuizProgress(snapshot.quizProgress);
         setQuizResultsByTopic(snapshot.quizResultsByTopic ?? {});
+        setTopicArtifacts(snapshot.topicArtifacts ?? {});
         setIsGeneratingQuiz(false);
         companionQuizRequestRef.current = null;
         setBlockSources(snapshot.blockSources);
+        setChatMessages(snapshot.chatMessages ?? []);
         const storedLiveMessages = snapshot.liveMessages ?? [];
         setLiveMessages(storedLiveMessages);
         lastLiveUserMessageRef.current =
@@ -707,6 +771,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         setIsLearnPanelCollapsed(snapshot.learnPanelCollapsed ?? false);
         liveGoalRef.current = snapshot.liveGoal;
       } else {
+        setCourseId(routeState.courseId ?? sessionId ?? null);
         setGoal(routeState.goal);
         setPlannerInput(shouldPrefillPlannerInput ? routeState.goal : "");
         setPreferredBlockType(routeState.preferredBlockType);
@@ -726,9 +791,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         setGeneratedQuizError(null);
         setQuizProgress(null);
         setQuizResultsByTopic({});
+        setTopicArtifacts({});
         setIsGeneratingQuiz(false);
         companionQuizRequestRef.current = null;
         setBlockSources([]);
+        setChatMessages([]);
         setLiveMessages([]);
         setLiveInputDraft("");
         setLiveOutputDraft("");
@@ -746,7 +813,16 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [authSession?.user?.id, isAuthPending, routeState.goal, routeState.preferredBlockType, routeState.useWebSearch, sessionId, shouldPrefillPlannerInput]);
+  }, [
+    authSession?.user?.id,
+    isAuthPending,
+    routeState.courseId,
+    routeState.goal,
+    routeState.preferredBlockType,
+    routeState.useWebSearch,
+    sessionId,
+    shouldPrefillPlannerInput,
+  ]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(DESKTOP_MEDIA_QUERY);
@@ -777,6 +853,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     router.replace(
       buildLearnHref({
         sessionId,
+        courseId,
         goal: "",
         preferredBlockType: "",
         useWebSearch: false,
@@ -804,6 +881,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     routeState.preferredBlockType,
     routeState.useWebSearch,
     router,
+    courseId,
     sessionId,
   ]);
 
@@ -813,6 +891,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     const snapshot: LearnSessionSnapshot = {
+      courseId,
       goal,
       plannerInput,
       preferredBlockType,
@@ -828,7 +907,9 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       generatedQuizError,
       quizProgress,
       quizResultsByTopic,
+      topicArtifacts,
       blockSources,
+      chatMessages,
       liveMessages,
       liveInputDraft,
       liveOutputDraft,
@@ -863,6 +944,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }, [
     authSession?.user?.id,
     blockSources,
+    chatMessages,
+    courseId,
     generatedBlock,
     generatedTopicId,
     generatedQuiz,
@@ -885,6 +968,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     selectedTopicId,
     sessionId,
     isSessionHydrated,
+    topicArtifacts,
     useWebSearch,
   ]);
 
@@ -971,6 +1055,22 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     return request;
   }
 
+  function showTopicArtifacts(topicId: string | null) {
+    setSelectedTopicId(topicId);
+
+    const storedArtifacts = getTopicArtifactsEntry(topicArtifactsRef.current, topicId);
+    const storedQuiz = storedArtifacts?.quiz ?? (storedArtifacts?.block?.type === "quiz" ? storedArtifacts.block : null);
+
+    setGeneratedBlock(storedArtifacts?.block ?? null);
+    setGeneratedTopicId(storedArtifacts?.block || storedQuiz ? topicId : null);
+    setGeneratedQuiz(storedQuiz);
+    setGeneratedQuizTopicId(storedQuiz ? topicId : null);
+    setGeneratedQuizError(null);
+    setQuizProgress(null);
+    setBlockSources([]);
+    setTopicError(null);
+  }
+
   async function requestLessonQuiz(options: {
     topicId: string;
     topicTitle: string;
@@ -984,6 +1084,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setGeneratedQuizTopicId(null);
     setGeneratedQuizError(null);
     setQuizProgress(null);
+    setTopicArtifacts((current) => updateTopicArtifacts(current, options.topicId, { quiz: null }));
 
     try {
       const response = await fetchApi("/api/reasoning/topic-quiz", {
@@ -1013,6 +1114,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
       setGeneratedQuiz(payload.quiz);
       setGeneratedQuizTopicId(payload.topicId);
+      setTopicArtifacts((current) => updateTopicArtifacts(current, payload.topicId, { quiz: payload.quiz }));
       return payload.quiz;
     } catch (error) {
       if (companionQuizRequestRef.current === requestId) {
@@ -1075,6 +1177,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setGeneratedTopicId(null);
     setBlockSources([]);
     setQuizResultsByTopic({});
+    setTopicArtifacts({});
     setIsLearnPanelCollapsed(false);
 
     try {
@@ -1241,6 +1344,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const requestType = intent?.requestType ?? "general_query";
     const shouldApplyLearnUpdates = requestType !== "general_query";
     const preferredType = intent?.preferredBlockType ?? (preferredBlockType || undefined);
+    const currentTopicId = currentTopic?.id ?? selectedTopicId ?? generatedTopicId;
 
     try {
       const response = await fetchApi("/api/reasoning/chat", {
@@ -1273,10 +1377,15 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       }
 
       if (shouldApplyLearnUpdates && data.targetPanel === "learn" && data.artifact) {
+        const nextTopicId = currentTopicId ?? null;
         setGeneratedBlock(data.artifact);
-        setGeneratedTopicId(data.artifact.topicId ?? null);
+        setGeneratedTopicId(nextTopicId);
         setBlockSources(data.sources ?? []);
         setIsLearnPanelCollapsed(false);
+
+        if (nextTopicId) {
+          setTopicArtifacts((current) => updateTopicArtifacts(current, nextTopicId, { block: data.artifact, quiz: null }));
+        }
       }
 
       if (shouldApplyLearnUpdates && data.targetPanel === "learn" && data.plan) {
@@ -1516,6 +1625,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             setGeneratedBlock(event.payload.block);
             setGeneratedTopicId(event.payload.topicId);
             setBlockSources(event.payload.sources);
+            setTopicArtifacts((current) =>
+              updateTopicArtifacts(current, event.payload.topicId, {
+                block: event.payload.block,
+                quiz: null,
+              }),
+            );
             setStreamedGeneratedBlock(null);
             break;
           case "error":
@@ -1796,6 +1911,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }) {
     const planSnapshot = planRef.current ?? undefined;
     const currentTopic = resolveCurrentTopic(planSnapshot);
+    const currentTopicId = currentTopic?.id ?? selectedTopicIdRef.current ?? generatedTopicIdRef.current ?? null;
     const currentArtifacts = buildCurrentArtifactsSnapshot();
     const chatHistory = options.chatHistory ?? getLiveChatHistory();
 
@@ -1831,10 +1947,15 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const shouldTargetLearn = data.targetPanel === "learn" || data.responseType !== "chat";
 
     if (shouldTargetLearn && data.artifact) {
+      const nextTopicId = currentTopicId;
       setGeneratedBlock(data.artifact);
-      setGeneratedTopicId(data.artifact.topicId ?? null);
+      setGeneratedTopicId(nextTopicId);
       setBlockSources(data.sources ?? []);
       setIsLearnPanelCollapsed(false);
+
+      if (nextTopicId) {
+        setTopicArtifacts((current) => updateTopicArtifacts(current, nextTopicId, { block: data.artifact, quiz: null }));
+      }
     }
 
     if (shouldTargetLearn && data.plan) {
@@ -2592,6 +2713,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     router.replace(
       buildLearnHref({
         sessionId: nextSessionId,
+        courseId: courseId ?? nextSessionId,
         goal: nextGoal,
         preferredBlockType,
         useWebSearch,
@@ -2784,7 +2906,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
                     quizResultsByTopic={quizResultsByTopic}
                     isPlanning={isPlanning}
                     isGeneratingTopic={isGeneratingTopic}
-                    onSelectTopic={setSelectedTopicId}
+                    onSelectTopic={showTopicArtifacts}
                     onGenerateTopic={() => void generateSelectedTopic()}
                   />
                 </div>

@@ -3,6 +3,7 @@ import type { TutorBlockType } from "@prof/contracts";
 export type TutorLaunchAction = "generate" | "live" | null;
 
 export type LearnRouteState = {
+  courseId: string | null;
   goal: string;
   preferredBlockType: TutorBlockType | "";
   useWebSearch: boolean;
@@ -40,8 +41,10 @@ function readParam(searchParams: SearchParamsLike, name: string) {
 export function parseLearnRouteState(searchParams: SearchParamsLike): LearnRouteState {
   const rawPreferredBlockType = readParam(searchParams, "format") ?? "";
   const rawAutoStartAction = readParam(searchParams, "autostart");
+  const rawCourseId = readParam(searchParams, "course");
 
   return {
+    courseId: rawCourseId?.trim() ? rawCourseId : null,
     goal: readParam(searchParams, "goal") ?? "",
     preferredBlockType: VALID_BLOCK_TYPES.has(rawPreferredBlockType as TutorBlockType)
       ? (rawPreferredBlockType as TutorBlockType)
@@ -62,6 +65,10 @@ export function createLearnSessionId() {
 
 export function buildLearnHref(state: LearnHrefState) {
   const params = new URLSearchParams();
+
+  if (state.courseId && (!state.sessionId || state.courseId !== state.sessionId)) {
+    params.set("course", state.courseId);
+  }
 
   if (state.goal) {
     params.set("goal", state.goal);

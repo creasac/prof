@@ -3,11 +3,13 @@ import cors from "cors";
 import {
   flashcardSchema,
   appConfigSchema,
+  learnCourseSeedSchema,
   lessonQuizRequestSchema,
   lessonQuizResponseSchema,
   learnSessionSnapshotSchema,
   plannedTopicBlockRequestSchema,
   plannedTopicBlockResponseSchema,
+  privateProfileSchema,
   quizBlockSchema,
   reasoningTopicBlockStreamEventSchema,
   planningModelResultSchema,
@@ -32,7 +34,12 @@ import { ZodError, z } from "zod";
 import { authHandler, getAuthSession, isAuthEnabled } from "./auth.js";
 import { isDatabaseEnabled } from "./db/client.js";
 import { env } from "./env.js";
-import { readLearnSessionForUser, saveLearnSessionForUser } from "./learn-sessions.js";
+import {
+  listLearnCoursesForUser,
+  readLearnCourseForUser,
+  readLearnSessionForUser,
+  saveLearnSessionForUser,
+} from "./learn-sessions.js";
 import {
   normalizePlanningResult,
   normalizeStreamedClarification,
@@ -133,6 +140,28 @@ app.get("/api/learn/sessions/:sessionId", async (req, res, next) => {
   }
 });
 
+app.get("/api/learn/courses/:courseId", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const courseRecord = await readLearnCourseForUser(authSession.user.id, req.params.courseId);
+
+    if (!courseRecord) {
+      res.status(404).json({
+        error: `Course ${req.params.courseId} was not found.`,
+      });
+      return;
+    }
+
+    res.json(learnCourseSeedSchema.parse(courseRecord));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.put("/api/learn/sessions/:sessionId", async (req, res, next) => {
   try {
     const authSession = await requireUserSession(req, res);
@@ -143,6 +172,36 @@ app.put("/api/learn/sessions/:sessionId", async (req, res, next) => {
     const snapshot = learnSessionSnapshotSchema.parse(req.body);
     const persistedSession = await saveLearnSessionForUser(authSession.user.id, req.params.sessionId, snapshot);
     res.json(persistedSession);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/profile/:username", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const sessionUsername = getSessionUsername(authSession);
+    const requestedUsername = req.params.username.trim().toLowerCase();
+
+    if (!sessionUsername || sessionUsername !== requestedUsername) {
+      res.status(404).json({
+        error: "Profile not found.",
+      });
+      return;
+    }
+
+    const courses = await listLearnCoursesForUser(authSession.user.id);
+
+    res.json(
+      privateProfileSchema.parse({
+        username: sessionUsername,
+        courses,
+      }),
+    );
   } catch (error) {
     next(error);
   }
@@ -662,6 +721,11 @@ async function requireUserSession(req: express.Request, res: express.Response) {
   }
 
   return authSession;
+}
+
+function getSessionUsername(authSession: NonNullable<Awaited<ReturnType<typeof getAuthSession>>>) {
+  const username = "username" in authSession.user ? authSession.user.username : null;
+  return typeof username === "string" && username.trim() ? username.trim().toLowerCase() : null;
 }
 
 function writeNdjson(res: express.Response, value: unknown) {

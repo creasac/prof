@@ -172,7 +172,13 @@ export const quizProgressSchema = z.object({
   answers: z.array(quizAnswerStateSchema),
 });
 
+export const learnTopicArtifactsSchema = z.object({
+  block: tutorBlockSchema.nullable().default(null),
+  quiz: quizBlockSchema.nullable().default(null),
+});
+
 export const learnSessionSnapshotSchema = z.object({
+  courseId: z.string().nullable().default(null),
   goal: z.string(),
   plannerInput: z.string(),
   preferredBlockType: tutorBlockTypeSchema.or(z.literal("")),
@@ -188,7 +194,9 @@ export const learnSessionSnapshotSchema = z.object({
   generatedQuizError: z.string().nullable(),
   quizProgress: quizProgressSchema.nullable(),
   quizResultsByTopic: z.record(z.string(), z.number()).optional().default({}),
+  topicArtifacts: z.record(z.string(), learnTopicArtifactsSchema).optional().default({}),
   blockSources: z.array(groundingSourceSchema),
+  chatMessages: z.array(learnSessionMessageSchema).optional().default([]),
   liveMessages: z.array(learnSessionMessageSchema).optional().default([]),
   liveInputDraft: z.string().optional().default(""),
   liveOutputDraft: z.string().optional().default(""),
@@ -201,9 +209,28 @@ export const learnSessionSnapshotSchema = z.object({
 
 export const persistedLearnSessionSchema = z.object({
   sessionId: z.string().min(1),
+  courseId: z.string().min(1),
   snapshot: learnSessionSnapshotSchema,
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),
+});
+
+export const learnCourseSummarySchema = z.object({
+  courseId: z.string().min(1),
+  title: z.string().min(1),
+  artifactCount: z.number().int().min(0),
+  updatedAt: z.string().min(1),
+});
+
+export const learnCourseSeedSchema = z.object({
+  courseId: z.string().min(1),
+  snapshot: learnSessionSnapshotSchema,
+  updatedAt: z.string().min(1),
+});
+
+export const privateProfileSchema = z.object({
+  username: z.string().min(1),
+  courses: z.array(learnCourseSummarySchema),
 });
 
 export const reasoningBlockRequestSchema = z.object({
@@ -497,8 +524,12 @@ export type LessonPlan = z.infer<typeof lessonPlanSchema>;
 export type LessonQuizRequest = z.infer<typeof lessonQuizRequestSchema>;
 export type LessonQuizResponse = z.infer<typeof lessonQuizResponseSchema>;
 export type LearnSessionMessage = z.infer<typeof learnSessionMessageSchema>;
+export type LearnTopicArtifacts = z.infer<typeof learnTopicArtifactsSchema>;
 export type LearnSessionSnapshot = z.infer<typeof learnSessionSnapshotSchema>;
+export type LearnCourseSeed = z.infer<typeof learnCourseSeedSchema>;
+export type LearnCourseSummary = z.infer<typeof learnCourseSummarySchema>;
 export type PersistedLearnSession = z.infer<typeof persistedLearnSessionSchema>;
+export type PrivateProfile = z.infer<typeof privateProfileSchema>;
 export type VoiceSessionResponse = z.infer<typeof voiceSessionResponseSchema>;
 export type CoursePlan = z.infer<typeof coursePlanSchema>;
 export type FlatCoursePlan = z.infer<typeof flatCoursePlanSchema>;

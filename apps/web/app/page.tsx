@@ -24,6 +24,7 @@ export default function HomePage() {
       router.push(
         buildLearnHref({
           sessionId,
+          courseId: sessionId,
           goal,
           preferredBlockType,
           useWebSearch,

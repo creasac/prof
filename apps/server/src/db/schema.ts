@@ -8,6 +8,8 @@ export const user = pgTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     email: text("email").notNull(),
+    username: text("username"),
+    displayUsername: text("display_username"),
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
@@ -15,6 +17,7 @@ export const user = pgTable(
   },
   (table) => ({
     emailUnique: uniqueIndex("user_email_unique").on(table.email),
+    usernameUnique: uniqueIndex("user_username_unique").on(table.username),
   }),
 );
 
@@ -85,6 +88,7 @@ export const learnSession = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    courseId: text("course_id"),
     goal: text("goal").notNull().default(""),
     snapshot: jsonb("snapshot").$type<LearnSessionSnapshot>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
@@ -92,6 +96,7 @@ export const learnSession = pgTable(
   },
   (table) => ({
     userIndex: index("learn_session_user_id_idx").on(table.userId),
+    courseIndex: index("learn_session_course_id_idx").on(table.courseId),
     updatedAtIndex: index("learn_session_updated_at_idx").on(table.updatedAt),
   }),
 );

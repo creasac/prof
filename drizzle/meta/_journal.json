@@ -8,6 +8,13 @@
       "when": 1774936981377,
       "tag": "0000_wandering_jubilee",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774936981378,
+      "tag": "0001_polite_profile",
+      "breakpoints": true
     }
   ]
 }

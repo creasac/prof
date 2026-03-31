@@ -130,7 +130,17 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
           </header>
           <div style={styles.card}>
             <p style={styles.bodyText}>Quiz is not ready in this session yet.</p>
-            <Link href={buildLearnHref({ sessionId, goal: "", preferredBlockType: "", useWebSearch: false, autoStartAction: null })} style={styles.link}>
+            <Link
+              href={buildLearnHref({
+                sessionId,
+                courseId: snapshot?.courseId ?? sessionId,
+                goal: "",
+                preferredBlockType: "",
+                useWebSearch: false,
+                autoStartAction: null,
+              })}
+              style={styles.link}
+            >
               Back to lesson
             </Link>
           </div>
@@ -148,6 +158,7 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
   ).length;
   const lessonHref = buildLearnHref({
     sessionId,
+    courseId: snapshot.courseId ?? sessionId,
     goal: "",
     preferredBlockType: "",
     useWebSearch: false,
