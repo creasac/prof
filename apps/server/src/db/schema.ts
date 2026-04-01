@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { CourseSnapshot, LearnSessionSnapshot } from "@prof/contracts";
 
 export const user = pgTable(
@@ -8,7 +8,7 @@ export const user = pgTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     email: text("email").notNull(),
-    username: text("username"),
+    username: text("username").notNull(),
     displayUsername: text("display_username"),
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
@@ -16,6 +16,9 @@ export const user = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },
   (table) => ({
+    nameNotBlank: check("user_name_not_blank", sql`char_length(btrim(${table.name})) > 0`),
+    emailNotBlank: check("user_email_not_blank", sql`char_length(btrim(${table.email})) > 0`),
+    usernameNotBlank: check("user_username_not_blank", sql`char_length(btrim(${table.username})) > 0`),
     emailUnique: uniqueIndex("user_email_unique").on(table.email),
     usernameUnique: uniqueIndex("user_username_unique").on(table.username),
   }),

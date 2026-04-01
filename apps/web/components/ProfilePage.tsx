@@ -1,12 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import type { PrivateProfile } from "@prof/contracts";
 
 import { authClient } from "../lib/auth-client";
+import { getSessionUsername } from "../lib/auth-user";
 import { buildCourseHref } from "../lib/course-route";
 import { loadProfile } from "../lib/profile-api";
+import { buildSettingsHref } from "../lib/profile-route";
 
 type ProfilePageProps = {
   username: string;
@@ -37,8 +40,7 @@ export function ProfilePage({ username }: ProfilePageProps) {
   const [pendingCourseId, setPendingCourseId] = useState<string | null>(null);
   const [isNavigating, startTransition] = useTransition();
   const normalizedUsername = username.toLowerCase();
-  const sessionUsername =
-    session?.user && "username" in session.user && typeof session.user.username === "string" ? session.user.username : "";
+  const sessionUsername = getSessionUsername(session);
   const isOwnerProfile = Boolean(session?.user?.id && sessionUsername && sessionUsername === normalizedUsername);
 
   useEffect(() => {
@@ -104,7 +106,15 @@ export function ProfilePage({ username }: ProfilePageProps) {
     <main style={styles.page}>
       <section style={styles.shell}>
         <header style={styles.header}>
-          <h1 style={styles.title}>@{profile?.username ?? normalizedUsername}</h1>
+          <div style={styles.headerIdentity}>
+            <h1 style={styles.title}>{profile.name}</h1>
+            <p style={styles.username}>@{profile.username ?? normalizedUsername}</p>
+          </div>
+          {isOwnerProfile ? (
+            <Link href={buildSettingsHref()} style={styles.editLink}>
+              Edit profile
+            </Link>
+          ) : null}
         </header>
 
         {pageError ? <p style={styles.errorText}>{pageError}</p> : null}
@@ -172,9 +182,15 @@ const styles: Record<string, CSSProperties> = {
   },
   header: {
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: "16px",
+  },
+  headerIdentity: {
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
   },
   title: {
     margin: 0,
@@ -182,6 +198,22 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1,
     color: "#2c1c14",
     letterSpacing: "-0.02em",
+  },
+  username: {
+    margin: 0,
+    fontSize: "0.96rem",
+    lineHeight: 1.3,
+    color: "#6a5447",
+  },
+  editLink: {
+    borderRadius: "999px",
+    border: "1px solid rgba(94, 73, 61, 0.14)",
+    background: "rgba(255, 252, 247, 0.92)",
+    color: "#5e493d",
+    padding: "8px 12px",
+    fontSize: "0.88rem",
+    fontWeight: 600,
+    textDecoration: "none",
   },
   grid: {
     display: "grid",

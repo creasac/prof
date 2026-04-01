@@ -399,13 +399,14 @@ export async function readProfileForViewer(options: {
   const [ownerRecord] = await requireDb()
     .select({
       id: user.id,
+      name: user.name,
       username: user.username,
     })
     .from(user)
     .where(eq(user.username, normalizedUsername))
     .limit(1);
 
-  if (!ownerRecord?.username) {
+  if (!ownerRecord) {
     return null;
   }
 
@@ -434,6 +435,7 @@ export async function readProfileForViewer(options: {
   }
 
   return {
+    name: ownerRecord.name,
     username: ownerRecord.username,
     courses: summaries,
   };

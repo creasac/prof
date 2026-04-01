@@ -29,6 +29,13 @@
       "when": 1774947600000,
       "tag": "0003_latest_courses",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775034000000,
+      "tag": "0004_strict_user_identity",
+      "breakpoints": true
     }
   ]
 }

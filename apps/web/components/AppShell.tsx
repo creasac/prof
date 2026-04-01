@@ -7,14 +7,19 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { buildCourseHref } from "../lib/course-route";
+import {
+  buildAuthHref,
+  getAvatarLabel,
+  getSessionUserImage,
+  getSessionUsername,
+} from "../lib/auth-user";
 import { buildLearnHref } from "../lib/learn-route";
 import { loadRemoteLearnSessionSummaries } from "../lib/learn-session-api";
 import { listLocalLearnSessionSummaries } from "../lib/learn-session";
 import { loadProfile } from "../lib/profile-api";
 import { authClient } from "../lib/auth-client";
 import { COURSE_LIBRARY_UPDATED_EVENT, LOCAL_SESSION_HISTORY_UPDATED_EVENT } from "../lib/app-shell-events";
-import { buildProfileHref } from "../lib/profile-route";
-import { AuthDock } from "./AuthDock";
+import { buildProfileHref, buildSettingsHref } from "../lib/profile-route";
 import { Icon } from "./TutorUi";
 
 const DESKTOP_MEDIA_QUERY = "(min-width: 960px)";
@@ -23,18 +28,6 @@ const DRAWER_RAIL_WIDTH = 62;
 const DESKTOP_CONTENT_OFFSET = DRAWER_WIDTH + 18;
 const DESKTOP_RAIL_OFFSET = DRAWER_RAIL_WIDTH + 16;
 const MOBILE_CONTENT_OFFSET = DRAWER_RAIL_WIDTH + 10;
-
-function getSessionUsername(session: ReturnType<typeof authClient.useSession>["data"]) {
-  if (!session?.user || !("username" in session.user)) {
-    return "";
-  }
-
-  return typeof session.user.username === "string" ? session.user.username : "";
-}
-
-function getAvatarLabel(username: string) {
-  return username.trim().charAt(0).toUpperCase() || "?";
-}
 
 function compareIsoDatesDesc(left: string, right: string) {
   return Date.parse(right) - Date.parse(left);
@@ -71,6 +64,14 @@ function toErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function AvatarBubble({ image, label }: { image: string; label: string }) {
+  return (
+    <span style={styles.profileAvatar}>
+      {image ? <img src={image} alt="" style={styles.profileAvatarImage} /> : label}
+    </span>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -87,8 +88,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [isSignOutMenuOpen, setIsSignOutMenuOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
+  const isAuthenticated = Boolean(authSession?.user?.id);
   const sessionUsername = getSessionUsername(authSession);
-  const profileHref = sessionUsername ? buildProfileHref(sessionUsername) : "";
+  const sessionUserImage = getSessionUserImage(authSession);
+  const profileHref = buildProfileHref(sessionUsername);
+  const settingsHref = buildSettingsHref();
   const remoteHistoryRef = useRef<LearnSessionSummary[]>([]);
   const hasInitializedDrawerRef = useRef(false);
   const authUserIdRef = useRef<string | null>(authSession?.user?.id ?? null);
@@ -245,7 +249,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     : MOBILE_CONTENT_OFFSET;
   const isHomePage = pathname === "/";
   const isExplorePage = pathname === "/explore";
-  const isProfilePage = Boolean(profileHref) && pathname === profileHref;
+  const isLoginPage = pathname === "/login";
+  const isSignupPage = pathname === "/signup";
+  const isProfilePage = pathname === profileHref;
+  const guestSignupHref = buildAuthHref("/signup", pathname);
+  const guestLoginHref = buildAuthHref("/login", pathname);
+  const identityLabel = `@${sessionUsername}`;
+  const identityAvatarLabel = getAvatarLabel(sessionUsername);
 
   function closeDrawerIfNeeded() {
     if (!isDesktop) {
@@ -488,8 +498,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               </section>
             </div>
 
-            {sessionUsername ? (
-              <div style={styles.drawerFooter}>
+            <div style={styles.drawerFooter}>
+              {isAuthenticated ? (
                 <div
                   ref={signOutMenuRef}
                   style={{
@@ -500,14 +510,15 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <Link
                     href={profileHref}
                     onClick={() => {
+                      setIsSignOutMenuOpen(false);
                       closeDrawerIfNeeded();
                     }}
                     style={styles.profileIdentity}
                     aria-label={`${sessionUsername} profile`}
                     aria-current={isProfilePage ? "page" : undefined}
                   >
-                    <span style={styles.profileAvatar}>{getAvatarLabel(sessionUsername)}</span>
-                    <span style={styles.profileUsername}>@{sessionUsername}</span>
+                    <AvatarBubble image={sessionUserImage} label={identityAvatarLabel} />
+                    <span style={styles.profileUsername}>{identityLabel}</span>
                   </Link>
 
                   <div style={styles.profileActions}>
@@ -523,6 +534,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
                     {isSignOutMenuOpen ? (
                       <div style={styles.signOutMenu}>
+                        <Link
+                          href={settingsHref}
+                          onClick={() => {
+                            setIsSignOutMenuOpen(false);
+                            closeDrawerIfNeeded();
+                          }}
+                          style={styles.signOutMenuLink}
+                        >
+                          Edit profile
+                        </Link>
                         <button
                           type="button"
                           onClick={() => void handleSignOut()}
@@ -535,8 +556,44 @@ export function AppShell({ children }: { children: ReactNode }) {
                     ) : null}
                   </div>
                 </div>
-              </div>
-            ) : null}
+              ) : (
+                <div
+                  style={{
+                    ...styles.profileLink,
+                    ...(isSignupPage ? styles.profileLinkActive : null),
+                  }}
+                >
+                  <Link
+                    href={guestSignupHref}
+                    onClick={() => {
+                      closeDrawerIfNeeded();
+                    }}
+                    style={styles.profileIdentity}
+                    aria-label="Sign up"
+                    aria-current={isSignupPage ? "page" : undefined}
+                  >
+                    <AvatarBubble image="" label="G" />
+                    <span style={styles.profileUsername}>Guest</span>
+                  </Link>
+
+                  <div style={styles.profileActions}>
+                    <Link
+                      href={guestLoginHref}
+                      onClick={() => {
+                        closeDrawerIfNeeded();
+                      }}
+                      style={{
+                        ...styles.profileActionLink,
+                        ...(isLoginPage ? styles.profileActionLinkActive : null),
+                      }}
+                      aria-current={isLoginPage ? "page" : undefined}
+                    >
+                      Login
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <div style={styles.drawerRail}>
@@ -549,10 +606,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name="menu" size={20} />
             </button>
 
-            {sessionUsername ? (
+            {isAuthenticated ? (
               <Link
                 href={profileHref}
                 onClick={() => {
+                  setIsSignOutMenuOpen(false);
                   closeDrawerIfNeeded();
                 }}
                 style={{
@@ -562,9 +620,24 @@ export function AppShell({ children }: { children: ReactNode }) {
                 aria-label={`${sessionUsername} profile`}
                 aria-current={isProfilePage ? "page" : undefined}
               >
-                <span style={styles.profileAvatar}>{getAvatarLabel(sessionUsername)}</span>
+                <AvatarBubble image={sessionUserImage} label={identityAvatarLabel} />
               </Link>
-            ) : null}
+            ) : (
+              <Link
+                href={guestSignupHref}
+                onClick={() => {
+                  closeDrawerIfNeeded();
+                }}
+                style={{
+                  ...styles.profileRailLink,
+                  ...(isSignupPage ? styles.profileRailLinkActive : null),
+                }}
+                aria-label="Sign up"
+                aria-current={isSignupPage ? "page" : undefined}
+              >
+                <AvatarBubble image="" label="G" />
+              </Link>
+            )}
           </div>
         )}
       </aside>
@@ -575,7 +648,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           paddingLeft: drawerOffset,
         }}
       >
-        <AuthDock />
         {children}
       </div>
     </>
@@ -849,6 +921,13 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 700,
     letterSpacing: "0.01em",
     flexShrink: 0,
+    overflow: "hidden",
+  },
+  profileAvatarImage: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "block",
   },
   profileIdentity: {
     minWidth: 0,
@@ -885,17 +964,52 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: "center",
     cursor: "pointer",
   },
+  profileActionLink: {
+    minWidth: "68px",
+    minHeight: "34px",
+    borderRadius: "10px",
+    border: "1px solid rgba(94, 73, 61, 0.12)",
+    background: "rgba(255, 255, 255, 0.9)",
+    color: "#5e493d",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0 12px",
+    fontSize: "0.88rem",
+    fontWeight: 600,
+    textDecoration: "none",
+  },
+  profileActionLinkActive: {
+    borderColor: "rgba(138, 55, 21, 0.18)",
+    background: "rgba(255, 244, 234, 0.94)",
+    color: "#8a3715",
+  },
   signOutMenu: {
     position: "absolute",
     right: 0,
     bottom: "calc(100% + 8px)",
     minWidth: "116px",
     padding: "6px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
     borderRadius: "12px",
     border: "1px solid rgba(94, 73, 61, 0.14)",
     background: "rgba(255, 249, 243, 0.98)",
     boxShadow: "0 16px 36px rgba(73, 35, 14, 0.16)",
     backdropFilter: "blur(18px)",
+  },
+  signOutMenuLink: {
+    width: "100%",
+    border: 0,
+    borderRadius: "8px",
+    background: "transparent",
+    color: "#5e493d",
+    padding: "8px 10px",
+    textAlign: "left",
+    fontSize: "0.88rem",
+    fontWeight: 600,
+    textDecoration: "none",
   },
   signOutMenuButton: {
     width: "100%",

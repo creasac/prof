@@ -174,7 +174,9 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
         <section style={styles.shell}>
           <header style={styles.header}>
             <div>
-              <p style={styles.ownerText}>@{username}</p>
+              <p style={styles.ownerText}>
+                @{username}/{courseSlug}
+              </p>
               <h1 style={styles.title}>{courseSlug}</h1>
             </div>
           </header>
@@ -191,10 +193,12 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
       <section style={styles.shell}>
         <header style={styles.header}>
           <div style={styles.headerCopy}>
-            <p style={styles.ownerText}>@{course.ownerUsername}</p>
+            <p style={styles.ownerText}>
+              @{course.ownerUsername}/{course.courseSlug}
+            </p>
             <h1 style={styles.title}>{course.title}</h1>
             <div style={styles.metaRow}>
-              <p style={styles.metaText}>{course.courseSlug} · updated {formatUpdatedAt(course.updatedAt)}</p>
+              <p style={styles.metaText}>updated {formatUpdatedAt(course.updatedAt)}</p>
               <span style={styles.visibilityPill}>{visibilityLabel}</span>
             </div>
           </div>
