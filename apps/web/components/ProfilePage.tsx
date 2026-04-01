@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import type { PrivateProfile } from "@prof/contracts";
+import { courseCoverAspectRatioCss, type PrivateProfile } from "@prof/contracts";
 
 import { authClient } from "../lib/auth-client";
 import { getSessionUsername } from "../lib/auth-user";
+import { buildCourseCoverUrl } from "../lib/course-api";
 import { buildCourseHref } from "../lib/course-route";
 import { loadProfile } from "../lib/profile-api";
 import { buildSettingsHref } from "../lib/profile-route";
@@ -123,6 +124,11 @@ export function ProfilePage({ username }: ProfilePageProps) {
           <div style={styles.grid}>
             {profile.courses.map((course) => {
               const isCoursePending = isNavigating && pendingCourseId === course.courseId;
+              const coverImageUrl = buildCourseCoverUrl({
+                username: course.ownerUsername,
+                courseSlug: course.courseSlug,
+                coverImage: course.coverImage,
+              });
 
               return (
                 <button
@@ -142,7 +148,15 @@ export function ProfilePage({ username }: ProfilePageProps) {
                   }}
                   disabled={isCoursePending}
                 >
-                  <div style={styles.placeholder}>prof</div>
+                  {coverImageUrl ? (
+                    <img
+                      src={coverImageUrl}
+                      alt={course.coverImage?.altText ?? `${course.title} course cover`}
+                      style={styles.coverImage}
+                    />
+                  ) : (
+                    <div style={styles.placeholder}>prof</div>
+                  )}
                   <div style={styles.cardBody}>
                     <h2 style={styles.cardTitle}>{course.title}</h2>
                     <p style={styles.cardMeta}>
@@ -174,11 +188,11 @@ const styles: Record<string, CSSProperties> = {
   },
   shell: {
     width: "100%",
-    maxWidth: "1080px",
+    maxWidth: "1160px",
     margin: "0 auto",
     display: "flex",
     flexDirection: "column",
-    gap: "18px",
+    gap: "16px",
   },
   header: {
     display: "flex",
@@ -217,8 +231,8 @@ const styles: Record<string, CSSProperties> = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "14px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
+    gap: "16px",
   },
   card: {
     border: "1px solid rgba(94, 73, 61, 0.12)",
@@ -228,13 +242,13 @@ const styles: Record<string, CSSProperties> = {
     padding: "10px",
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
+    gap: "9px",
     cursor: "pointer",
     textAlign: "left",
   },
   placeholder: {
     borderRadius: "12px",
-    minHeight: "112px",
+    aspectRatio: courseCoverAspectRatioCss,
     background:
       "linear-gradient(135deg, rgba(94, 73, 61, 0.1), rgba(191, 91, 44, 0.12)), repeating-linear-gradient(135deg, rgba(94, 73, 61, 0.06), rgba(94, 73, 61, 0.06) 12px, rgba(255, 255, 255, 0) 12px, rgba(255, 255, 255, 0) 24px)",
     color: "#6c5648",
@@ -244,20 +258,27 @@ const styles: Record<string, CSSProperties> = {
     letterSpacing: "0.08em",
     textTransform: "uppercase",
   },
+  coverImage: {
+    display: "block",
+    width: "100%",
+    height: "auto",
+    borderRadius: "14px",
+  },
   cardBody: {
     display: "flex",
     flexDirection: "column",
-    gap: "4px",
+    gap: "3px",
+    padding: "0 2px 2px",
   },
   cardTitle: {
     margin: 0,
-    fontSize: "1rem",
-    lineHeight: 1.3,
+    fontSize: "0.96rem",
+    lineHeight: 1.28,
     color: "#2c1c14",
   },
   cardMeta: {
     margin: 0,
-    fontSize: "0.84rem",
+    fontSize: "0.8rem",
     lineHeight: 1.4,
     color: "#6a5447",
   },

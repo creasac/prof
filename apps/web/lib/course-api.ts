@@ -2,12 +2,38 @@ import {
   courseSummaryListSchema,
   courseVisibilitySchema,
   type CourseSummary,
+  type CourseCoverImage,
   persistedCourseSchema,
   type CourseVisibility,
   type PersistedCourse,
 } from "@prof/contracts";
 
-import { fetchApi } from "./api";
+import { buildApiUrl, fetchApi } from "./api";
+
+export function buildCourseCoverPath(username: string, courseSlug: string) {
+  return `/api/courses/${encodeURIComponent(username)}/${encodeURIComponent(courseSlug)}/cover`;
+}
+
+export function buildCourseCoverUrl(options: {
+  username: string;
+  courseSlug: string;
+  coverImage: CourseCoverImage | null;
+  cacheBust?: string | number | null;
+}) {
+  if (!options.coverImage) {
+    return null;
+  }
+
+  const query = new URLSearchParams({
+    v: options.coverImage.updatedAt,
+  });
+
+  if (options.cacheBust !== null && options.cacheBust !== undefined && `${options.cacheBust}`.trim()) {
+    query.set("r", String(options.cacheBust));
+  }
+
+  return `${buildApiUrl(buildCourseCoverPath(options.username, options.courseSlug))}?${query.toString()}`;
+}
 
 export async function loadPublicCourses(): Promise<CourseSummary[]> {
   const response = await fetchApi("/api/courses/public");
@@ -48,6 +74,19 @@ export async function forkRemoteCourse(username: string, courseSlug: string): Pr
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error((body as { error?: string }).error ?? "Failed to save a copy of this course.");
+  }
+
+  return persistedCourseSchema.parse(await response.json());
+}
+
+export async function generateRemoteCourseCover(username: string, courseSlug: string): Promise<PersistedCourse> {
+  const response = await fetchApi(buildCourseCoverPath(username, courseSlug), {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to generate the course cover.");
   }
 
   return persistedCourseSchema.parse(await response.json());

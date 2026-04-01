@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import type { CourseSummary } from "@prof/contracts";
+import { courseCoverAspectRatioCss, type CourseSummary } from "@prof/contracts";
 import { useEffect, useState, type CSSProperties } from "react";
 
-import { loadPublicCourses } from "../lib/course-api";
+import { buildCourseCoverUrl, loadPublicCourses } from "../lib/course-api";
 import { buildCourseHref } from "../lib/course-route";
 
 function formatUpdatedAt(value: string) {
@@ -77,27 +77,43 @@ export function ExplorePage() {
           <p style={styles.emptyText}>No public courses yet.</p>
         ) : (
           <div style={styles.grid}>
-            {courses.map((course) => (
-              <Link
-                key={course.courseId}
-                href={buildCourseHref({
-                  username: course.ownerUsername,
-                  courseSlug: course.courseSlug,
-                })}
-                style={styles.card}
-              >
-                <div style={styles.placeholder}>explore</div>
-                <div style={styles.cardBody}>
-                  <p style={styles.courseRoute}>
-                    @{course.ownerUsername}/{course.courseSlug}
-                  </p>
-                  <h2 style={styles.cardTitle}>{course.title}</h2>
-                  <p style={styles.cardMeta}>
-                    {getArtifactLabel(course.artifactCount)} · updated {formatUpdatedAt(course.updatedAt)}
-                  </p>
-                </div>
-              </Link>
-            ))}
+            {courses.map((course) => {
+              const coverImageUrl = buildCourseCoverUrl({
+                username: course.ownerUsername,
+                courseSlug: course.courseSlug,
+                coverImage: course.coverImage,
+              });
+
+              return (
+                <Link
+                  key={course.courseId}
+                  href={buildCourseHref({
+                    username: course.ownerUsername,
+                    courseSlug: course.courseSlug,
+                  })}
+                  style={styles.card}
+                >
+                  {coverImageUrl ? (
+                    <img
+                      src={coverImageUrl}
+                      alt={course.coverImage?.altText ?? `${course.title} course cover`}
+                      style={styles.coverImage}
+                    />
+                  ) : (
+                    <div style={styles.placeholder}>explore</div>
+                  )}
+                  <div style={styles.cardBody}>
+                    <p style={styles.courseRoute}>
+                      @{course.ownerUsername}/{course.courseSlug}
+                    </p>
+                    <h2 style={styles.cardTitle}>{course.title}</h2>
+                    <p style={styles.cardMeta}>
+                      {getArtifactLabel(course.artifactCount)} · updated {formatUpdatedAt(course.updatedAt)}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         )}
       </section>
@@ -113,11 +129,11 @@ const styles: Record<string, CSSProperties> = {
   },
   shell: {
     width: "100%",
-    maxWidth: "1080px",
+    maxWidth: "1160px",
     margin: "0 auto",
     display: "flex",
     flexDirection: "column",
-    gap: "18px",
+    gap: "16px",
   },
   header: {
     display: "flex",
@@ -145,8 +161,8 @@ const styles: Record<string, CSSProperties> = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "14px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
+    gap: "16px",
   },
   card: {
     border: "1px solid rgba(94, 73, 61, 0.12)",
@@ -156,13 +172,13 @@ const styles: Record<string, CSSProperties> = {
     padding: "10px",
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
+    gap: "9px",
     textAlign: "left",
     textDecoration: "none",
   },
   placeholder: {
     borderRadius: "12px",
-    minHeight: "112px",
+    aspectRatio: courseCoverAspectRatioCss,
     background:
       "linear-gradient(135deg, rgba(94, 73, 61, 0.1), rgba(191, 91, 44, 0.12)), repeating-linear-gradient(135deg, rgba(94, 73, 61, 0.06), rgba(94, 73, 61, 0.06) 12px, rgba(255, 255, 255, 0) 12px, rgba(255, 255, 255, 0) 24px)",
     color: "#6c5648",
@@ -172,27 +188,34 @@ const styles: Record<string, CSSProperties> = {
     letterSpacing: "0.08em",
     textTransform: "uppercase",
   },
+  coverImage: {
+    display: "block",
+    width: "100%",
+    height: "auto",
+    borderRadius: "14px",
+  },
   cardBody: {
     display: "flex",
     flexDirection: "column",
-    gap: "4px",
+    gap: "3px",
+    padding: "0 2px 2px",
   },
   courseRoute: {
     margin: 0,
     color: "#8a3715",
-    fontSize: "0.76rem",
+    fontSize: "0.74rem",
     fontWeight: 600,
     lineHeight: 1.4,
   },
   cardTitle: {
     margin: 0,
-    fontSize: "1rem",
-    lineHeight: 1.3,
+    fontSize: "0.96rem",
+    lineHeight: 1.28,
     color: "#2c1c14",
   },
   cardMeta: {
     margin: 0,
-    fontSize: "0.84rem",
+    fontSize: "0.8rem",
     lineHeight: 1.4,
     color: "#6a5447",
   },

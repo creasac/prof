@@ -43,10 +43,13 @@ import { env } from "./env.js";
 import {
   forkCourseForUser,
   listPublicCourses,
+  readCourseCoverForViewer,
   readCourseForViewer,
   readProfileForViewer,
+  updateCourseCoverForOwner,
   updateCourseVisibilityForOwner,
 } from "./courses.js";
+import { buildCourseCoverStorageKey, generateCourseCover } from "./course-cover.js";
 import {
   listLearnSessionsForUser,
   readLearnSessionForUser,
@@ -201,10 +204,120 @@ app.get("/api/courses/:username/:courseSlug", async (req, res, next) => {
   }
 });
 
+app.get("/api/courses/:username/:courseSlug/cover", async (req, res, next) => {
+  try {
+    const authSession = await getAuthSession(req.headers);
+    const courseCover = await readCourseCoverForViewer({
+      viewerUserId: authSession?.user?.id ?? null,
+      ownerUsername: req.params.username,
+      courseSlug: req.params.courseSlug,
+    });
+
+    if (!courseCover) {
+      res.status(404).json({
+        error: "Course cover not found.",
+      });
+      return;
+    }
+
+    res.setHeader(
+      "Cache-Control",
+      courseCover.course.visibility === "public"
+        ? "public, max-age=3600, stale-while-revalidate=86400"
+        : "private, max-age=300",
+    );
+    await sendStoredFile(res, courseCover.storageKey, {
+      contentType: courseCover.mimeType,
+      fileName: `${courseCover.course.courseSlug}-cover`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/courses/public", async (_req, res, next) => {
   try {
     const courses = await listPublicCourses();
     res.json(courseSummaryListSchema.parse(courses));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/courses/:username/:courseSlug/cover", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    if (!isReasoningEnabled()) {
+      res.status(503).json({
+        error: "Course cover generation is not configured. Set the Gemini configuration first.",
+      });
+      return;
+    }
+
+    if (!isR2Configured()) {
+      res.status(503).json({
+        error: "Course cover storage is not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET.",
+      });
+      return;
+    }
+
+    const courseRecord = await readCourseForViewer({
+      viewerUserId: authSession.user.id,
+      ownerUsername: req.params.username,
+      courseSlug: req.params.courseSlug,
+    });
+
+    if (!courseRecord) {
+      res.status(404).json({
+        error: "Course not found.",
+      });
+      return;
+    }
+
+    if (!courseRecord.isOwner) {
+      res.status(403).json({
+        error: "Only the course owner can generate a course cover.",
+      });
+      return;
+    }
+
+    const generatedCover = await generateCourseCover({
+      course: courseRecord,
+    });
+    const storageKey = buildCourseCoverStorageKey(courseRecord.courseId);
+
+    await putR2Object({
+      key: storageKey,
+      body: generatedCover.body,
+      contentType: generatedCover.mimeType,
+      contentDisposition: `inline; filename="${escapeContentDispositionFilename(`${courseRecord.courseSlug}-cover`)}"`,
+    });
+
+    const updatedCourse = await updateCourseCoverForOwner({
+      userId: authSession.user.id,
+      username: getSessionUsername(authSession),
+      courseSlug: req.params.courseSlug,
+      coverImage: {
+        storageKey,
+        mimeType: generatedCover.mimeType,
+        prompt: generatedCover.prompt,
+        altText: generatedCover.altText,
+        updatedAt: new Date(),
+      },
+    });
+
+    if (!updatedCourse) {
+      res.status(404).json({
+        error: "Course not found.",
+      });
+      return;
+    }
+
+    res.json(persistedCourseSchema.parse(updatedCourse));
   } catch (error) {
     next(error);
   }
@@ -994,7 +1107,7 @@ async function requireUserSession(req: express.Request, res: express.Response) {
 
   if (!authSession?.user?.id) {
     res.status(401).json({
-      error: "You must be signed in to access saved learn sessions.",
+      error: "You must be signed in to access this resource.",
     });
     return null;
   }
@@ -1008,16 +1121,30 @@ function getSessionUsername(authSession: NonNullable<Awaited<ReturnType<typeof g
 }
 
 async function sendStoredPdfFile(res: express.Response, storageKey: string, fileName?: string) {
+  await sendStoredFile(res, storageKey, {
+    contentType: "application/pdf",
+    fileName: fileName || "document.pdf",
+  });
+}
+
+async function sendStoredFile(
+  res: express.Response,
+  storageKey: string,
+  options: {
+    contentType: string;
+    fileName: string;
+  },
+) {
   const object = await getR2Object(storageKey);
 
-  res.setHeader("Content-Type", object.contentType || "application/pdf");
+  res.setHeader("Content-Type", object.contentType || options.contentType);
   if (object.contentLength !== undefined) {
     res.setHeader("Content-Length", String(object.contentLength));
   }
   res.setHeader(
     "Content-Disposition",
     object.contentDisposition ||
-      `inline; filename="${escapeContentDispositionFilename(fileName || "document.pdf")}"`,
+      `inline; filename="${escapeContentDispositionFilename(options.fileName)}"`,
   );
   res.end(object.body);
 }

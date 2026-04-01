@@ -1,5 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import {
+  courseCoverImageSchema,
   courseRefSchema,
   courseSnapshotSchema,
   courseSummarySchema,
@@ -158,6 +159,11 @@ async function readCourseLineageById(courseId: string) {
       visibility: course.visibility,
       artifactCount: course.artifactCount,
       snapshot: course.snapshot,
+      coverImageKey: course.coverImageKey,
+      coverImageMimeType: course.coverImageMimeType,
+      coverImagePrompt: course.coverImagePrompt,
+      coverImageAltText: course.coverImageAltText,
+      coverImageUpdatedAt: course.coverImageUpdatedAt,
       createdAt: course.createdAt,
       updatedAt: course.updatedAt,
       ownerUsername: user.username,
@@ -170,6 +176,59 @@ async function readCourseLineageById(courseId: string) {
   return record ?? null;
 }
 
+function toCourseCoverImage(input: {
+  coverImagePrompt?: string | null;
+  coverImageAltText?: string | null;
+  coverImageUpdatedAt?: Date | null;
+}) {
+  if (!input.coverImagePrompt || !input.coverImageAltText || !input.coverImageUpdatedAt) {
+    return null;
+  }
+
+  return courseCoverImageSchema.parse({
+    prompt: input.coverImagePrompt,
+    altText: input.coverImageAltText,
+    updatedAt: input.coverImageUpdatedAt.toISOString(),
+  });
+}
+
+function toPersistedCourse(input: {
+  id: string;
+  ownerId: string;
+  ownerUsername: string | null;
+  slug: string;
+  title: string;
+  visibility: string;
+  artifactCount: number;
+  snapshot: CourseSnapshot;
+  updatedAt: Date;
+  coverImagePrompt?: string | null;
+  coverImageAltText?: string | null;
+  coverImageUpdatedAt?: Date | null;
+  viewerUserId: string | null;
+  fallbackOwnerUsername: string;
+}) {
+  const visibility = courseVisibilitySchema.parse(input.visibility);
+  const isOwner = input.ownerId === input.viewerUserId;
+
+  if (!isOwner && visibility !== "public") {
+    return null;
+  }
+
+  return persistedCourseSchema.parse({
+    courseId: input.id,
+    ownerUsername: input.ownerUsername ?? input.fallbackOwnerUsername,
+    courseSlug: input.slug,
+    title: input.title,
+    visibility,
+    artifactCount: input.artifactCount,
+    snapshot: input.snapshot,
+    coverImage: toCourseCoverImage(input),
+    isOwner,
+    updatedAt: input.updatedAt.toISOString(),
+  });
+}
+
 async function readCourseLineageByOwnerAndSlug(ownerUsername: string, courseSlug: string) {
   const [record] = await requireDb()
     .select({
@@ -180,6 +239,11 @@ async function readCourseLineageByOwnerAndSlug(ownerUsername: string, courseSlug
       visibility: course.visibility,
       artifactCount: course.artifactCount,
       snapshot: course.snapshot,
+      coverImageKey: course.coverImageKey,
+      coverImageMimeType: course.coverImageMimeType,
+      coverImagePrompt: course.coverImagePrompt,
+      coverImageAltText: course.coverImageAltText,
+      coverImageUpdatedAt: course.coverImageUpdatedAt,
       createdAt: course.createdAt,
       updatedAt: course.updatedAt,
       ownerUsername: user.username,
@@ -208,6 +272,9 @@ function toCourseSummary(input: {
   title: string;
   visibility: string;
   artifactCount: number;
+  coverImagePrompt?: string | null;
+  coverImageAltText?: string | null;
+  coverImageUpdatedAt?: Date | null;
   updatedAt: Date;
 }) {
   return courseSummarySchema.parse({
@@ -217,6 +284,7 @@ function toCourseSummary(input: {
     title: input.title,
     visibility: courseVisibilitySchema.parse(input.visibility),
     artifactCount: input.artifactCount,
+    coverImage: toCourseCoverImage(input),
     updatedAt: input.updatedAt.toISOString(),
   });
 }
@@ -228,6 +296,13 @@ async function createCourseLineage(options: {
   title: string;
   artifactCount: number;
   snapshot: CourseSnapshot;
+  coverImage?: {
+    storageKey: string;
+    mimeType: string;
+    prompt: string;
+    altText: string;
+    updatedAt: Date;
+  } | null;
 }) {
   const db = requireDb();
   const slug = await ensureUniqueSlug(options.ownerId, options.preferredSlug);
@@ -242,6 +317,11 @@ async function createCourseLineage(options: {
       visibility: "private",
       artifactCount: options.artifactCount,
       snapshot: options.snapshot,
+      coverImageKey: options.coverImage?.storageKey ?? null,
+      coverImageMimeType: options.coverImage?.mimeType ?? null,
+      coverImagePrompt: options.coverImage?.prompt ?? null,
+      coverImageAltText: options.coverImage?.altText ?? null,
+      coverImageUpdatedAt: options.coverImage?.updatedAt ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -429,6 +509,9 @@ export async function readProfileForViewer(options: {
         title: record.title,
         visibility: record.visibility,
         artifactCount: record.artifactCount,
+        coverImagePrompt: record.coverImagePrompt,
+        coverImageAltText: record.coverImageAltText,
+        coverImageUpdatedAt: record.coverImageUpdatedAt,
         updatedAt: record.updatedAt,
       }),
     );
@@ -449,6 +532,9 @@ export async function listPublicCourses() {
       title: course.title,
       visibility: course.visibility,
       artifactCount: course.artifactCount,
+      coverImagePrompt: course.coverImagePrompt,
+      coverImageAltText: course.coverImageAltText,
+      coverImageUpdatedAt: course.coverImageUpdatedAt,
       updatedAt: course.updatedAt,
       ownerUsername: user.username,
     })
@@ -471,6 +557,9 @@ export async function listPublicCourses() {
         title: record.title,
         visibility: record.visibility,
         artifactCount: record.artifactCount,
+        coverImagePrompt: record.coverImagePrompt,
+        coverImageAltText: record.coverImageAltText,
+        coverImageUpdatedAt: record.coverImageUpdatedAt,
         updatedAt: record.updatedAt,
       }),
     );
@@ -490,23 +579,10 @@ export async function readCourseForViewer(options: {
     return null;
   }
 
-  const isOwner = courseRecord.ownerId === options.viewerUserId;
-  const visibility = courseVisibilitySchema.parse(courseRecord.visibility);
-
-  if (!isOwner && visibility !== "public") {
-    return null;
-  }
-
-  return persistedCourseSchema.parse({
-    courseId: courseRecord.id,
-    ownerUsername: courseRecord.ownerUsername ?? options.ownerUsername,
-    courseSlug: courseRecord.slug,
-    title: courseRecord.title,
-    visibility,
-    artifactCount: courseRecord.artifactCount,
-    snapshot: courseRecord.snapshot,
-    isOwner,
-    updatedAt: courseRecord.updatedAt.toISOString(),
+  return toPersistedCourse({
+    ...courseRecord,
+    viewerUserId: options.viewerUserId,
+    fallbackOwnerUsername: options.ownerUsername,
   });
 }
 
@@ -535,6 +611,7 @@ export async function forkCourseForUser(options: {
     return sourceCourse;
   }
 
+  const sourceCourseLineage = await readCourseLineageByOwnerAndSlug(ownerUsername, courseSlug);
   const forkedCourse = await createCourseLineage({
     ownerId: userId,
     ownerUsername: username,
@@ -542,18 +619,26 @@ export async function forkCourseForUser(options: {
     title: sourceCourse.title,
     artifactCount: sourceCourse.artifactCount,
     snapshot: sourceCourse.snapshot,
+    coverImage:
+      sourceCourseLineage?.coverImageKey &&
+      sourceCourseLineage.coverImageMimeType &&
+      sourceCourseLineage.coverImagePrompt &&
+      sourceCourseLineage.coverImageAltText &&
+      sourceCourseLineage.coverImageUpdatedAt
+        ? {
+            storageKey: sourceCourseLineage.coverImageKey,
+            mimeType: sourceCourseLineage.coverImageMimeType,
+            prompt: sourceCourseLineage.coverImagePrompt,
+            altText: sourceCourseLineage.coverImageAltText,
+            updatedAt: sourceCourseLineage.coverImageUpdatedAt,
+          }
+        : null,
   });
 
-  return persistedCourseSchema.parse({
-    courseId: forkedCourse.id,
-    ownerUsername: forkedCourse.ownerUsername ?? username,
-    courseSlug: forkedCourse.slug,
-    title: forkedCourse.title,
-    visibility: courseVisibilitySchema.parse(forkedCourse.visibility),
-    artifactCount: forkedCourse.artifactCount,
-    snapshot: forkedCourse.snapshot,
-    isOwner: true,
-    updatedAt: forkedCourse.updatedAt.toISOString(),
+  return toPersistedCourse({
+    ...forkedCourse,
+    viewerUserId: userId,
+    fallbackOwnerUsername: username,
   });
 }
 
@@ -582,6 +667,73 @@ export async function updateCourseVisibilityForOwner(options: {
       })
       .where(eq(course.id, courseRecord.id));
   }
+
+  return readCourseForViewer({
+    viewerUserId: userId,
+    ownerUsername: username,
+    courseSlug,
+  });
+}
+
+export async function readCourseCoverForViewer(options: {
+  viewerUserId: string | null;
+  ownerUsername: string;
+  courseSlug: string;
+}) {
+  const courseRecord = await readCourseLineageByOwnerAndSlug(options.ownerUsername, options.courseSlug);
+  if (!courseRecord) {
+    return null;
+  }
+
+  const persistedCourse = toPersistedCourse({
+    ...courseRecord,
+    viewerUserId: options.viewerUserId,
+    fallbackOwnerUsername: options.ownerUsername,
+  });
+  if (!persistedCourse || !courseRecord.coverImageKey || !courseRecord.coverImageMimeType) {
+    return null;
+  }
+
+  return {
+    course: persistedCourse,
+    storageKey: courseRecord.coverImageKey,
+    mimeType: courseRecord.coverImageMimeType,
+  };
+}
+
+export async function updateCourseCoverForOwner(options: {
+  userId: string;
+  username: string | null;
+  courseSlug: string;
+  coverImage: {
+    storageKey: string;
+    mimeType: string;
+    prompt: string;
+    altText: string;
+    updatedAt: Date;
+  };
+}) {
+  const { userId, username, courseSlug, coverImage } = options;
+  if (!username) {
+    return null;
+  }
+
+  const courseRecord = await readCourseLineageByOwnerAndSlug(username, courseSlug);
+  if (!courseRecord || courseRecord.ownerId !== userId) {
+    return null;
+  }
+
+  await requireDb()
+    .update(course)
+    .set({
+      coverImageKey: coverImage.storageKey,
+      coverImageMimeType: coverImage.mimeType,
+      coverImagePrompt: coverImage.prompt,
+      coverImageAltText: coverImage.altText,
+      coverImageUpdatedAt: coverImage.updatedAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(course.id, courseRecord.id));
 
   return readCourseForViewer({
     viewerUserId: userId,

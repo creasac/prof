@@ -6,7 +6,13 @@ import { useEffect, useMemo, useState, useTransition, type CSSProperties } from 
 import { useRouter } from "next/navigation";
 
 import { authClient } from "../lib/auth-client";
-import { forkRemoteCourse, loadRemoteCourse, updateRemoteCourseVisibility } from "../lib/course-api";
+import {
+  buildCourseCoverUrl,
+  forkRemoteCourse,
+  generateRemoteCourseCover,
+  loadRemoteCourse,
+  updateRemoteCourseVisibility,
+} from "../lib/course-api";
 import { buildCourseHref, buildCourseQuizHref } from "../lib/course-route";
 import { collectCourseQuizzes, findTopicInPlan, pickSelectedTopicId, resolveCourseBlock } from "../lib/course-view";
 import { buildLearnHref, createLearnSessionId } from "../lib/learn-route";
@@ -40,8 +46,9 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [coverRefreshKey, setCoverRefreshKey] = useState<string>("");
   const [isPending, startTransition] = useTransition();
-  const [pendingAction, setPendingAction] = useState<"copy" | "public" | "private" | null>(null);
+  const [pendingAction, setPendingAction] = useState<"copy" | "cover" | "public" | "private" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +106,14 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
       null
     : null;
   const visibilityLabel = course?.visibility === "public" ? "Public" : "Private";
+  const coverImageUrl = course
+    ? buildCourseCoverUrl({
+        username: course.ownerUsername,
+        courseSlug: course.courseSlug,
+        coverImage: course.coverImage,
+        cacheBust: coverRefreshKey,
+      })
+    : null;
 
   function startLearning() {
     if (!course) {
@@ -164,6 +179,25 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
     }
   }
 
+  async function generateCover() {
+    if (!course || !course.isOwner) {
+      return;
+    }
+
+    setPendingAction("cover");
+    setActionError(null);
+
+    try {
+      const updatedCourse = await generateRemoteCourseCover(course.ownerUsername, course.courseSlug);
+      setCoverRefreshKey(String(Date.now()));
+      setCourse(updatedCourse);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to generate the course cover.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   if (isLoading) {
     return null;
   }
@@ -191,54 +225,85 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
   return (
     <main style={styles.page}>
       <section style={styles.shell}>
-        <header style={styles.header}>
-          <div style={styles.headerCopy}>
-            <p style={styles.ownerText}>
-              @{course.ownerUsername}/{course.courseSlug}
-            </p>
-            <h1 style={styles.title}>{course.title}</h1>
-            <div style={styles.metaRow}>
-              <p style={styles.metaText}>updated {formatUpdatedAt(course.updatedAt)}</p>
-              <span style={styles.visibilityPill}>{visibilityLabel}</span>
+        <section style={styles.heroCard}>
+          <div style={styles.heroContent}>
+            <div style={styles.headerCopy}>
+              <p style={styles.ownerText}>
+                @{course.ownerUsername}/{course.courseSlug}
+              </p>
+              <h1 style={styles.title}>{course.title}</h1>
+              <div style={styles.metaRow}>
+                <p style={styles.metaText}>updated {formatUpdatedAt(course.updatedAt)}</p>
+                <span style={styles.visibilityPill}>{visibilityLabel}</span>
+              </div>
+              {actionError ? <p style={styles.errorText}>{actionError}</p> : null}
+            </div>
+
+            <div style={styles.headerActions}>
+              {authSession?.user?.id && !course.isOwner ? (
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  onClick={() => {
+                    void saveAsCopy();
+                  }}
+                  disabled={pendingAction !== null}
+                >
+                  {pendingAction === "copy" ? "Saving..." : "Save as Copy"}
+                </button>
+              ) : null}
+
+              {authSession?.user?.id && course.isOwner ? (
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  onClick={() => {
+                    void generateCover();
+                  }}
+                  disabled={pendingAction !== null}
+                >
+                  {pendingAction === "cover"
+                    ? "Generating..."
+                    : course.coverImage
+                      ? "Regenerate cover"
+                      : "Generate cover"}
+                </button>
+              ) : null}
+
+              {authSession?.user?.id && course.isOwner ? (
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  onClick={() => {
+                    void changeVisibility(course.visibility === "public" ? "private" : "public");
+                  }}
+                  disabled={pendingAction !== null}
+                >
+                  {pendingAction === "public" || pendingAction === "private"
+                    ? "Saving..."
+                    : course.visibility === "public"
+                      ? "Make private"
+                      : "Make public"}
+                </button>
+              ) : null}
+
+              <button type="button" style={styles.primaryButton} onClick={startLearning} disabled={isPending}>
+                {isPending ? "Opening..." : "Learn"}
+              </button>
             </div>
           </div>
 
-          <div style={styles.headerActions}>
-            {authSession?.user?.id && !course.isOwner ? (
-              <button
-                type="button"
-                style={styles.secondaryButton}
-                onClick={() => {
-                  void saveAsCopy();
-                }}
-                disabled={pendingAction !== null}
-              >
-                {pendingAction === "copy" ? "Saving..." : "Save as Copy"}
-              </button>
-            ) : null}
-
-            {authSession?.user?.id && course.isOwner ? (
-              <button
-                type="button"
-                style={styles.secondaryButton}
-                onClick={() => {
-                  void changeVisibility(course.visibility === "public" ? "private" : "public");
-                }}
-                disabled={pendingAction !== null}
-              >
-                {pendingAction === "public" || pendingAction === "private"
-                  ? "Saving..."
-                  : course.visibility === "public"
-                    ? "Make private"
-                    : "Make public"}
-              </button>
-            ) : null}
-
-            <button type="button" style={styles.primaryButton} onClick={startLearning} disabled={isPending}>
-              {isPending ? "Opening..." : "Learn"}
-            </button>
-          </div>
-        </header>
+          {coverImageUrl ? (
+            <div style={styles.coverCard}>
+              <img
+                key={coverImageUrl}
+                src={coverImageUrl}
+                alt={course.coverImage?.altText ?? `${course.title} course cover`}
+                style={styles.coverImage}
+              />
+            </div>
+          ) : null}
+        </section>
 
         {snapshot.sourceMaterials.length > 0 ? (
           <SourceMaterialsPanel
@@ -282,7 +347,6 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
 
             <div style={styles.panelBody}>
               {pageError ? <p style={styles.errorText}>{pageError}</p> : null}
-              {actionError ? <p style={styles.errorText}>{actionError}</p> : null}
 
               {activeContent?.block ? (
                 <>
@@ -348,17 +412,31 @@ const styles: Record<string, CSSProperties> = {
     flexDirection: "column",
     gap: "14px",
   },
-  header: {
+  heroCard: {
+    borderRadius: "22px",
+    border: "1px solid rgba(72, 42, 22, 0.08)",
+    background: "rgba(255, 252, 247, 0.9)",
+    boxShadow: "0 14px 34px rgba(93, 70, 51, 0.08)",
+    padding: "18px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: "16px",
+    gap: "18px",
     flexWrap: "wrap",
+  },
+  heroContent: {
+    flex: "1 1 520px",
+    minWidth: 0,
+    maxWidth: "760px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
   },
   headerCopy: {
     display: "flex",
     flexDirection: "column",
     gap: "4px",
+    minWidth: 0,
   },
   ownerText: {
     margin: 0,
@@ -399,6 +477,19 @@ const styles: Record<string, CSSProperties> = {
     gap: "8px",
     alignItems: "center",
     flexWrap: "wrap",
+    marginTop: "auto",
+  },
+  coverCard: {
+    flex: "0 0 300px",
+    width: "100%",
+    maxWidth: "300px",
+    marginLeft: "auto",
+  },
+  coverImage: {
+    display: "block",
+    width: "100%",
+    height: "auto",
+    borderRadius: "14px",
   },
   primaryButton: {
     border: "none",
@@ -429,7 +520,7 @@ const styles: Record<string, CSSProperties> = {
   },
   workspace: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
     gap: "14px",
   },
   panel: {

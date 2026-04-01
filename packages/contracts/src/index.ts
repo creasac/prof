@@ -303,6 +303,15 @@ export const learnSessionSummarySchema = z.object({
 
 export const learnSessionSummaryListSchema = z.array(learnSessionSummarySchema);
 
+export const courseCoverImageSchema = z.object({
+  prompt: z.string().min(1).max(2000),
+  altText: z.string().min(1).max(280),
+  updatedAt: z.string().min(1),
+});
+
+export const courseCoverAspectRatio = "21:9" as const;
+export const courseCoverAspectRatioCss = "21 / 9" as const;
+
 export const courseSummarySchema = z.object({
   courseId: z.string().min(1),
   ownerUsername: z.string().min(1),
@@ -310,6 +319,7 @@ export const courseSummarySchema = z.object({
   title: z.string().min(1),
   visibility: courseVisibilitySchema,
   artifactCount: z.number().int().min(0),
+  coverImage: courseCoverImageSchema.nullable().default(null),
   updatedAt: z.string().min(1),
 });
 
@@ -323,6 +333,7 @@ export const persistedCourseSchema = z.object({
   visibility: courseVisibilitySchema,
   artifactCount: z.number().int().min(0),
   snapshot: courseSnapshotSchema,
+  coverImage: courseCoverImageSchema.nullable().default(null),
   isOwner: z.boolean(),
   updatedAt: z.string().min(1),
 });
@@ -633,6 +644,7 @@ export type LessonQuizRequest = z.infer<typeof lessonQuizRequestSchema>;
 export type LessonQuizResponse = z.infer<typeof lessonQuizResponseSchema>;
 export type CourseRef = z.infer<typeof courseRefSchema>;
 export type CourseSnapshot = z.infer<typeof courseSnapshotSchema>;
+export type CourseCoverImage = z.infer<typeof courseCoverImageSchema>;
 export type CourseSummary = z.infer<typeof courseSummarySchema>;
 export type PersistedCourse = z.infer<typeof persistedCourseSchema>;
 export type CourseVisibility = z.infer<typeof courseVisibilitySchema>;

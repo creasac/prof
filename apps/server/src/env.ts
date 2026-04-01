@@ -41,6 +41,8 @@ const rawEnvSchema = z.object({
   GOOGLE_CLOUD_PROJECT: z.string().optional(),
   GOOGLE_CLOUD_LOCATION: z.string().default("global"),
   REASONING_MODEL: z.string().default("gemini-2.5-flash"),
+  COURSE_COVER_PROMPT_MODEL: z.string().default("gemini-2.5-flash"),
+  COURSE_COVER_IMAGE_MODEL: z.string().default("gemini-2.5-flash-image"),
 });
 
 const parsed = rawEnvSchema.parse(process.env);
