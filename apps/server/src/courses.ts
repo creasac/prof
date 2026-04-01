@@ -201,6 +201,26 @@ function toCourseRef(input: {
   return courseRefSchema.parse(input);
 }
 
+function toCourseSummary(input: {
+  courseId: string;
+  ownerUsername: string;
+  courseSlug: string;
+  title: string;
+  visibility: string;
+  artifactCount: number;
+  updatedAt: Date;
+}) {
+  return courseSummarySchema.parse({
+    courseId: input.courseId,
+    ownerUsername: input.ownerUsername,
+    courseSlug: input.courseSlug,
+    title: input.title,
+    visibility: courseVisibilitySchema.parse(input.visibility),
+    artifactCount: input.artifactCount,
+    updatedAt: input.updatedAt.toISOString(),
+  });
+}
+
 async function createCourseLineage(options: {
   ownerId: string;
   ownerUsername: string;
@@ -401,14 +421,14 @@ export async function readProfileForViewer(options: {
 
   for (const record of courseRecords) {
     summaries.push(
-      courseSummarySchema.parse({
+      toCourseSummary({
         courseId: record.id,
         ownerUsername: ownerRecord.username,
         courseSlug: record.slug,
         title: record.title,
-        visibility: courseVisibilitySchema.parse(record.visibility),
+        visibility: record.visibility,
         artifactCount: record.artifactCount,
-        updatedAt: record.updatedAt.toISOString(),
+        updatedAt: record.updatedAt,
       }),
     );
   }
@@ -417,6 +437,44 @@ export async function readProfileForViewer(options: {
     username: ownerRecord.username,
     courses: summaries,
   };
+}
+
+export async function listPublicCourses() {
+  const courseRecords = await requireDb()
+    .select({
+      id: course.id,
+      slug: course.slug,
+      title: course.title,
+      visibility: course.visibility,
+      artifactCount: course.artifactCount,
+      updatedAt: course.updatedAt,
+      ownerUsername: user.username,
+    })
+    .from(course)
+    .innerJoin(user, eq(course.ownerId, user.id))
+    .where(eq(course.visibility, "public"))
+    .orderBy(desc(course.updatedAt));
+  const summaries: CourseSummary[] = [];
+
+  for (const record of courseRecords) {
+    if (!record.ownerUsername) {
+      continue;
+    }
+
+    summaries.push(
+      toCourseSummary({
+        courseId: record.id,
+        ownerUsername: record.ownerUsername,
+        courseSlug: record.slug,
+        title: record.title,
+        visibility: record.visibility,
+        artifactCount: record.artifactCount,
+        updatedAt: record.updatedAt,
+      }),
+    );
+  }
+
+  return summaries;
 }
 
 export async function readCourseForViewer(options: {

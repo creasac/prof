@@ -313,6 +313,8 @@ export const courseSummarySchema = z.object({
   updatedAt: z.string().min(1),
 });
 
+export const courseSummaryListSchema = z.array(courseSummarySchema);
+
 export const persistedCourseSchema = z.object({
   courseId: z.string().min(1),
   ownerUsername: z.string().min(1),

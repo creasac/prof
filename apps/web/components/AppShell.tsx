@@ -244,6 +244,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       : DESKTOP_RAIL_OFFSET
     : MOBILE_CONTENT_OFFSET;
   const isHomePage = pathname === "/";
+  const isExplorePage = pathname === "/explore";
   const isProfilePage = Boolean(profileHref) && pathname === profileHref;
 
   function closeDrawerIfNeeded() {
@@ -285,6 +286,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         autoStartAction: null,
       }),
     );
+  }
+
+  function navigateToExplore() {
+    if (isExplorePage) {
+      closeDrawerIfNeeded();
+      return;
+    }
+
+    closeDrawerIfNeeded();
+    router.push("/explore");
   }
 
   function isCourseActive(course: CourseSummary) {
@@ -369,20 +380,37 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
 
             <div style={styles.drawerBody}>
-              <button
-                type="button"
-                onClick={navigateToHome}
-                style={{
-                  ...styles.learnButton,
-                  ...(isHomePage ? styles.learnButtonActive : null),
-                }}
-                aria-current={isHomePage ? "page" : undefined}
-              >
-                <span style={styles.buttonIconWrap}>
-                  <Icon name="plus" size={17} />
-                </span>
-                <span>learn something</span>
-              </button>
+              <div style={styles.primaryActions}>
+                <button
+                  type="button"
+                  onClick={navigateToHome}
+                  style={{
+                    ...styles.learnButton,
+                    ...(isHomePage ? styles.learnButtonActive : null),
+                  }}
+                  aria-current={isHomePage ? "page" : undefined}
+                >
+                  <span style={styles.buttonIconWrap}>
+                    <Icon name="plus" size={17} />
+                  </span>
+                  <span>learn something new</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={navigateToExplore}
+                  style={{
+                    ...styles.learnButton,
+                    ...(isExplorePage ? styles.learnButtonActive : null),
+                  }}
+                  aria-current={isExplorePage ? "page" : undefined}
+                >
+                  <span style={styles.buttonIconWrap}>
+                    <Icon name="search" size={16} />
+                  </span>
+                  <span>explore</span>
+                </button>
+              </div>
 
               <section style={styles.section}>
                 <button
@@ -626,8 +654,13 @@ const styles: Record<string, CSSProperties> = {
     gap: "14px",
   },
   drawerFooter: {
-    padding: "12px 10px 16px",
+    padding: "8px 10px 16px",
     borderTop: "1px solid rgba(94, 73, 61, 0.1)",
+  },
+  primaryActions: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
   },
   toggleButton: {
     width: "36px",
@@ -783,10 +816,11 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: "16px",
     border: "1px solid transparent",
     background: "rgba(255, 255, 255, 0.58)",
-    padding: "10px 12px",
+    minHeight: "42px",
+    padding: "2px 0 2px 2px",
     display: "flex",
     alignItems: "center",
-    gap: "10px",
+    gap: "8px",
   },
   profileLinkActive: {
     borderColor: "rgba(138, 55, 21, 0.14)",
@@ -824,6 +858,7 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: "10px",
+    paddingRight: "8px",
   },
   profileUsername: {
     minWidth: 0,

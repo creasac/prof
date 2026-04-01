@@ -1,11 +1,24 @@
 import {
+  courseSummaryListSchema,
   courseVisibilitySchema,
+  type CourseSummary,
   persistedCourseSchema,
   type CourseVisibility,
   type PersistedCourse,
 } from "@prof/contracts";
 
 import { fetchApi } from "./api";
+
+export async function loadPublicCourses(): Promise<CourseSummary[]> {
+  const response = await fetchApi("/api/courses/public");
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to load public courses.");
+  }
+
+  return courseSummaryListSchema.parse(await response.json());
+}
 
 export async function loadRemoteCourse(
   username: string,

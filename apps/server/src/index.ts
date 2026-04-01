@@ -4,6 +4,7 @@ import {
   attachUrlRequestSchema,
   flashcardSchema,
   appConfigSchema,
+  courseSummaryListSchema,
   courseVisibilitySchema,
   createPublicId,
   lessonQuizRequestSchema,
@@ -41,6 +42,7 @@ import { isDatabaseEnabled } from "./db/client.js";
 import { env } from "./env.js";
 import {
   forkCourseForUser,
+  listPublicCourses,
   readCourseForViewer,
   readProfileForViewer,
   updateCourseVisibilityForOwner,
@@ -194,6 +196,15 @@ app.get("/api/courses/:username/:courseSlug", async (req, res, next) => {
     }
 
     res.json(persistedCourseSchema.parse(courseRecord));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/courses/public", async (_req, res, next) => {
+  try {
+    const courses = await listPublicCourses();
+    res.json(courseSummaryListSchema.parse(courses));
   } catch (error) {
     next(error);
   }
