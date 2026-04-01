@@ -75,8 +75,9 @@ function countTopicArtifacts(topicArtifacts: CourseSnapshot["topicArtifacts"]) {
 
 function countSnapshotArtifacts(snapshot: CourseSnapshot) {
   const topicArtifactCount = countTopicArtifacts(snapshot.topicArtifacts ?? {});
-  if (topicArtifactCount > 0) {
-    return topicArtifactCount;
+  const sourceMaterialCount = snapshot.sourceMaterials?.length ?? 0;
+  if (topicArtifactCount > 0 || sourceMaterialCount > 0) {
+    return topicArtifactCount + sourceMaterialCount;
   }
 
   let fallbackCount = 0;
@@ -89,11 +90,17 @@ function countSnapshotArtifacts(snapshot: CourseSnapshot) {
     fallbackCount += 1;
   }
 
-  return fallbackCount;
+  return fallbackCount + sourceMaterialCount;
 }
 
 function hasCourseContent(snapshot: CourseSnapshot) {
-  return Boolean(snapshot.plan || snapshot.generatedBlock || snapshot.generatedQuiz || countSnapshotArtifacts(snapshot) > 0);
+  return Boolean(
+    snapshot.plan ||
+      snapshot.generatedBlock ||
+      snapshot.generatedQuiz ||
+      (snapshot.sourceMaterials?.length ?? 0) > 0 ||
+      countSnapshotArtifacts(snapshot) > 0,
+  );
 }
 
 function deriveCourseSnapshot(snapshot: LearnSessionSnapshot) {
@@ -101,6 +108,7 @@ function deriveCourseSnapshot(snapshot: LearnSessionSnapshot) {
     goal: snapshot.goal,
     plan: snapshot.plan,
     planSources: snapshot.planSources ?? [],
+    sourceMaterials: snapshot.sourceMaterials ?? [],
     // Topic selection is session UI state. It should not mutate the saved course on every click.
     selectedTopicId: null,
     generatedBlock: snapshot.generatedBlock,

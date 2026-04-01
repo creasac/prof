@@ -1,14 +1,17 @@
 import express from "express";
 import cors from "cors";
 import {
+  attachUrlRequestSchema,
   flashcardSchema,
   appConfigSchema,
   courseVisibilitySchema,
+  createPublicId,
   lessonQuizRequestSchema,
   lessonQuizResponseSchema,
   learnSessionSnapshotSchema,
   plannedTopicBlockRequestSchema,
   plannedTopicBlockResponseSchema,
+  sourceMaterialResponseSchema,
   persistedCourseSchema,
   privateProfileSchema,
   quizBlockSchema,
@@ -64,6 +67,15 @@ import {
 import { generateReasoningContent, generateReasoningContentStream } from "./reasoning-runtime.js";
 import { isReasoningEnabled } from "./providers/reasoning/index.js";
 import { isSearchEnabled } from "./providers/search/index.js";
+import { importUrl } from "./providers/search/url-import.js";
+import { getR2Object, isR2Configured, putR2Object } from "./providers/storage/r2.js";
+import { extractPdfText, parseUploadedPdf } from "./source-material-upload.js";
+import {
+  buildPdfStorageKey,
+  createPdfSourceMaterial,
+  createUrlSourceMaterial,
+  findSourceMaterial,
+} from "./source-materials.js";
 import { normalizeTutorBlock } from "./tutor.js";
 import { createVoiceSession, isVoiceEnabled } from "./providers/voice/index.js";
 
@@ -167,6 +179,36 @@ app.get("/api/courses/:username/:courseSlug", async (req, res, next) => {
   }
 });
 
+app.get("/api/courses/:username/:courseSlug/materials/:materialId/file", async (req, res, next) => {
+  try {
+    const authSession = await getAuthSession(req.headers);
+    const courseRecord = await readCourseForViewer({
+      viewerUserId: authSession?.user?.id ?? null,
+      ownerUsername: req.params.username,
+      courseSlug: req.params.courseSlug,
+    });
+
+    if (!courseRecord) {
+      res.status(404).json({
+        error: `Course @${req.params.username}/${req.params.courseSlug} was not found.`,
+      });
+      return;
+    }
+
+    const material = findSourceMaterial(courseRecord.snapshot.sourceMaterials ?? [], req.params.materialId);
+    if (!material || material.kind !== "pdf" || !material.storageKey) {
+      res.status(404).json({
+        error: "Attached PDF not found.",
+      });
+      return;
+    }
+
+    await sendStoredPdfFile(res, material.storageKey, material.fileName);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.put("/api/learn/sessions/:sessionId", async (req, res, next) => {
   try {
     const authSession = await requireUserSession(req, res);
@@ -182,6 +224,107 @@ app.put("/api/learn/sessions/:sessionId", async (req, res, next) => {
       snapshot,
     );
     res.json(persistedSession);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/learn/sessions/:sessionId/materials/url", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const input = attachUrlRequestSchema.parse(req.body);
+    const imported = await importUrl(input.url);
+    const material = createUrlSourceMaterial(imported);
+
+    res.json(
+      sourceMaterialResponseSchema.parse({
+        material,
+      }),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/learn/sessions/:sessionId/materials/pdf", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    if (!isR2Configured()) {
+      res.status(503).json({
+        error: "PDF uploads are not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET.",
+      });
+      return;
+    }
+
+    const uploadedPdf = await parseUploadedPdf(req);
+    const materialId = createPublicId(12);
+    const storageKey = buildPdfStorageKey({
+      userId: authSession.user.id,
+      sessionId: req.params.sessionId,
+      materialId,
+      fileName: uploadedPdf.fileName,
+    });
+
+    await putR2Object({
+      key: storageKey,
+      body: uploadedPdf.buffer,
+      contentType: "application/pdf",
+      contentDisposition: `inline; filename="${escapeContentDispositionFilename(uploadedPdf.fileName)}"`,
+    });
+
+    const extractedText = await extractPdfText(uploadedPdf.buffer);
+    const material = createPdfSourceMaterial({
+      id: materialId,
+      title: derivePdfTitle(uploadedPdf.fileName, extractedText),
+      fileName: uploadedPdf.fileName,
+      mimeType: uploadedPdf.mimeType,
+      sizeBytes: uploadedPdf.sizeBytes,
+      storageKey,
+      textExcerpt: extractedText,
+    });
+
+    res.json(
+      sourceMaterialResponseSchema.parse({
+        material,
+      }),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/learn/sessions/:sessionId/materials/:materialId/file", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const sessionRecord = await readLearnSessionForUser(authSession.user.id, req.params.sessionId);
+    if (!sessionRecord) {
+      res.status(404).json({
+        error: `Learn session ${req.params.sessionId} was not found.`,
+      });
+      return;
+    }
+
+    const material = findSourceMaterial(sessionRecord.snapshot.sourceMaterials ?? [], req.params.materialId);
+    if (!material || material.kind !== "pdf" || !material.storageKey) {
+      res.status(404).json({
+        error: "Attached PDF not found.",
+      });
+      return;
+    }
+
+    await sendStoredPdfFile(res, material.storageKey, material.fileName);
   } catch (error) {
     next(error);
   }
@@ -299,6 +442,8 @@ app.post("/api/reasoning/block", async (req, res, next) => {
       prompt: buildTutorBlockPrompt(input),
       searchQuery: input.goal,
       useWebSearch: input.useWebSearch,
+      groundingTexts: [input.goal, input.learnerContext],
+      sourceMaterials: input.sourceMaterials,
       config: {
         responseMimeType: "application/json",
         responseJsonSchema: schema,
@@ -337,6 +482,8 @@ app.post("/api/reasoning/plan/stream", async (req, res, next) => {
       prompt: buildStreamingPlanPrompt(input),
       searchQuery: input.userInput || input.goal,
       useWebSearch: input.useWebSearch,
+      groundingTexts: [input.goal, input.userInput, input.learnerContext],
+      sourceMaterials: input.sourceMaterials,
       config: {},
     });
 
@@ -504,6 +651,8 @@ app.post("/api/reasoning/plan", async (req, res, next) => {
       prompt: buildReasoningPlanPrompt(input),
       searchQuery: input.userInput || input.goal,
       useWebSearch: input.useWebSearch,
+      groundingTexts: [input.goal, input.userInput, input.learnerContext],
+      sourceMaterials: input.sourceMaterials,
       config: {
         responseMimeType: "application/json",
         responseJsonSchema: schema,
@@ -546,6 +695,8 @@ app.post("/api/reasoning/topic-block/stream", async (req, res, next) => {
       prompt: buildStreamingPlannedTopicPrompt(input, topic),
       searchQuery: `${input.goal}\nTopic: ${topic.title}\n${topic.summary}`,
       useWebSearch: input.useWebSearch,
+      groundingTexts: [input.goal, input.learnerContext],
+      sourceMaterials: input.sourceMaterials,
       config: {},
     });
 
@@ -639,6 +790,8 @@ app.post("/api/reasoning/topic-block", async (req, res, next) => {
       prompt: buildPlannedTopicPrompt(input, topic),
       searchQuery: `${input.goal}\nTopic: ${topic.title}\n${topic.summary}`,
       useWebSearch: input.useWebSearch,
+      groundingTexts: [input.goal, input.learnerContext],
+      sourceMaterials: input.sourceMaterials,
       config: {
         responseMimeType: "application/json",
         responseJsonSchema: schema,
@@ -673,6 +826,7 @@ app.post("/api/reasoning/topic-quiz", async (req, res, next) => {
       prompt: buildLessonQuizPrompt(input),
       searchQuery: `${input.topicTitle}\n${input.lesson.title}`,
       useWebSearch: false,
+      groundingTexts: [input.goal, input.learnerContext],
       config: {
         responseMimeType: "application/json",
         responseJsonSchema: schema,
@@ -740,6 +894,8 @@ app.post("/api/reasoning/chat", async (req, res, next) => {
       prompt: buildChatPrompt(input),
       searchQuery: input.message,
       useWebSearch: input.useWebSearch,
+      groundingTexts: [input.message, ...input.chatHistory.map((message) => message.content)],
+      sourceMaterials: input.sourceMaterials,
       config: {
         responseMimeType: "application/json",
         responseSchema,
@@ -798,6 +954,39 @@ async function requireUserSession(req: express.Request, res: express.Response) {
 function getSessionUsername(authSession: NonNullable<Awaited<ReturnType<typeof getAuthSession>>>) {
   const username = "username" in authSession.user ? authSession.user.username : null;
   return typeof username === "string" && username.trim() ? username.trim().toLowerCase() : null;
+}
+
+async function sendStoredPdfFile(res: express.Response, storageKey: string, fileName?: string) {
+  const object = await getR2Object(storageKey);
+
+  res.setHeader("Content-Type", object.contentType || "application/pdf");
+  if (object.contentLength !== undefined) {
+    res.setHeader("Content-Length", String(object.contentLength));
+  }
+  res.setHeader(
+    "Content-Disposition",
+    object.contentDisposition ||
+      `inline; filename="${escapeContentDispositionFilename(fileName || "document.pdf")}"`,
+  );
+  res.end(object.body);
+}
+
+function derivePdfTitle(fileName: string, extractedText: string) {
+  const firstLine = extractedText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  if (firstLine) {
+    return firstLine;
+  }
+
+  const withoutExtension = fileName.replace(/\.pdf$/i, "").trim();
+  return withoutExtension || "PDF attachment";
+}
+
+function escapeContentDispositionFilename(fileName: string) {
+  return fileName.replace(/["\\\r\n]+/g, "_");
 }
 
 function writeNdjson(res: express.Response, value: unknown) {

@@ -22,6 +22,7 @@ import {
   type ReasoningRequestType,
   type ReasoningChatResponse,
   type ReasoningUpdateTarget,
+  type SourceMaterial,
   type TutorBlock,
   type TutorBlockType,
 } from "@prof/contracts";
@@ -47,11 +48,21 @@ import { loadRemoteCourse } from "../lib/course-api";
 import { readLearnSessionSnapshot, writeLearnSessionSnapshot } from "../lib/learn-session";
 import { loadRemoteLearnSession, saveRemoteLearnSession } from "../lib/learn-session-api";
 import { buildLearnHref, buildLearnQuizHref, createLearnSessionId, parseLearnRouteState } from "../lib/learn-route";
+import {
+  attachUrlMaterial,
+  uploadPdfMaterial,
+} from "../lib/source-materials-api";
+import {
+  buildLearnSessionMaterialFileHref,
+  findAttachedUrlMaterial,
+  upsertSourceMaterial,
+} from "../lib/source-materials";
 import { createElevenLabsVoiceSession, type VoiceSessionHandle, type VoiceToolCallPayload } from "../lib/voice/elevenlabs";
 import type { QuizProgress } from "../lib/quiz";
 import Link from "next/link";
 import { PlannerView } from "./PlannerUi";
 import { PromptComposer } from "./PromptComposer";
+import { SourceMaterialsPanel } from "./SourceMaterialsPanel";
 import { BlockView, Icon, IconText } from "./TutorUi";
 
 const DESKTOP_MEDIA_QUERY = "(min-width: 960px)";
@@ -62,6 +73,7 @@ const SPLITTER_WIDTH = 16;
 const CHAT_SCROLL_BOTTOM_THRESHOLD = 24;
 const LIVE_CONTEXT_MAX_CHARS = 1200;
 const LIVE_STATUS_PREFIX = "Status:";
+const PDF_FILE_MAX_BYTES = 15 * 1024 * 1024;
 const LIVE_ARTIFACT_KEYWORDS = [
   "create a lesson",
   "create lesson",
@@ -87,6 +99,7 @@ const LIVE_ARTIFACT_KEYWORDS = [
   "write a lesson",
   "write lesson",
 ];
+const URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`]+/gi;
 
 const LIVE_REASONING_TOOL_NAME = "request_reasoning";
 const REASONING_REQUEST_TYPES = ["new_content", "update_content", "general_query"] as const;
@@ -479,6 +492,7 @@ function createSeededSessionSnapshot(snapshot: CourseSnapshot, course: CourseRef
     plan: snapshot.plan,
     planClarification: null,
     planSources: snapshot.planSources,
+    sourceMaterials: snapshot.sourceMaterials ?? [],
     selectedTopicId: snapshot.selectedTopicId,
     generatedBlock: snapshot.generatedBlock,
     generatedTopicId: snapshot.generatedTopicId,
@@ -499,6 +513,10 @@ function createSeededSessionSnapshot(snapshot: CourseSnapshot, course: CourseRef
     learnPanelCollapsed: false,
     liveGoal: null,
   };
+}
+
+function extractUrls(value: string) {
+  return value.match(URL_PATTERN) ?? [];
 }
 
 function normalizeTranscriptForCompare(text: string) {
@@ -575,6 +593,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const [plan, setPlan] = useState<CoursePlan | null>(null);
   const [planClarification, setPlanClarification] = useState<PlanningClarification | null>(null);
   const [planSources, setPlanSources] = useState<GroundingSource[]>([]);
+  const [sourceMaterials, setSourceMaterials] = useState<SourceMaterial[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [streamedRequestType, setStreamedRequestType] = useState<PlanRequestType | null>(null);
   const [streamedPlanTitle, setStreamedPlanTitle] = useState("");
@@ -593,6 +612,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [blockSources, setBlockSources] = useState<GroundingSource[]>([]);
   const [plannerError, setPlannerError] = useState<string | null>(null);
+  const [materialError, setMaterialError] = useState<string | null>(null);
   const [topicError, setTopicError] = useState<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("Disconnected");
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -605,6 +625,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const [isLearnPanelCollapsed, setIsLearnPanelCollapsed] = useState(false);
   const [isResizingPane, setIsResizingPane] = useState(false);
   const [isSessionHydrated, setIsSessionHydrated] = useState(() => !sessionId);
+  const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
 
   const configRef = useRef<AppConfig | null>(null);
   const planClarificationRef = useRef<PlanningClarification | null>(null);
@@ -623,6 +644,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const generatedBlockRef = useRef<TutorBlock | null>(null);
   const generatedQuizRef = useRef<QuizBlock | null>(null);
   const topicArtifactsRef = useRef<Record<string, LearnTopicArtifacts>>({});
+  const sourceMaterialsRef = useRef<SourceMaterial[]>([]);
   const liveMessagesRef = useRef<ChatMessage[]>([]);
   const lastLiveStatusRef = useRef<{ text: string; at: number } | null>(null);
   const liveAudioStatusRef = useRef(false);
@@ -707,6 +729,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }, [topicArtifacts]);
 
   useEffect(() => {
+    sourceMaterialsRef.current = sourceMaterials;
+  }, [sourceMaterials]);
+
+  useEffect(() => {
     liveMessagesRef.current = liveMessages;
   }, [liveMessages]);
 
@@ -786,6 +812,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         setPlan(snapshot.plan);
         setPlanClarification(snapshot.planClarification);
         setPlanSources(snapshot.planSources);
+        setSourceMaterials(snapshot.sourceMaterials ?? []);
         setStreamedRequestType(null);
         setStreamedPlanTitle("");
         setStreamedTopics([]);
@@ -825,6 +852,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         setPlan(null);
         setPlanClarification(null);
         setPlanSources([]);
+        setSourceMaterials([]);
         setStreamedRequestType(null);
         setStreamedPlanTitle("");
         setStreamedTopics([]);
@@ -950,6 +978,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       plan,
       planClarification,
       planSources,
+      sourceMaterials,
       selectedTopicId,
       generatedBlock,
       generatedTopicId,
@@ -1034,6 +1063,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     selectedTopicId,
     sessionId,
     isSessionHydrated,
+    sourceMaterials,
     topicArtifacts,
     useWebSearch,
   ]);
@@ -1247,6 +1277,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setIsLearnPanelCollapsed(false);
 
     try {
+      const requestSourceMaterials = await ensureUrlMaterialsAttached([requestGoal, nextInput].filter(Boolean).join("\n"));
       const response = await fetchApi("/api/reasoning/plan/stream", {
         method: "POST",
         headers: {
@@ -1259,6 +1290,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           currentPlan: mode === "refine" ? plan : undefined,
           userInput: mode === "draft" ? undefined : nextInput,
           useWebSearch: nextUseWebSearch,
+          sourceMaterials: requestSourceMaterials,
         }),
       });
 
@@ -1389,6 +1421,82 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setIsPlanning(false);
   }
 
+  async function ensureUrlMaterialsAttached(input: string) {
+    const trimmed = input.trim();
+    let nextMaterials = sourceMaterialsRef.current;
+
+    if (!trimmed || !sessionId || !authSession?.user?.id) {
+      return nextMaterials;
+    }
+
+    const urls = extractUrls(trimmed);
+    if (urls.length === 0) {
+      return nextMaterials;
+    }
+
+    let changed = false;
+
+    for (const rawUrl of urls) {
+      if (findAttachedUrlMaterial(nextMaterials, rawUrl)) {
+        continue;
+      }
+
+      try {
+        const material = await attachUrlMaterial(sessionId, rawUrl);
+        nextMaterials = upsertSourceMaterial(nextMaterials, material);
+        changed = true;
+      } catch (error) {
+        setMaterialError(error instanceof Error ? error.message : "Failed to attach URL.");
+      }
+    }
+
+    if (changed) {
+      setSourceMaterials(nextMaterials);
+    }
+
+    return nextMaterials;
+  }
+
+  async function handleAttachPdfFiles(files: File[]) {
+    if (!sessionId) {
+      setMaterialError("Start a learn session before attaching PDFs.");
+      return;
+    }
+
+    if (!authSession?.user?.id) {
+      setMaterialError("Sign in to attach PDFs to a course.");
+      return;
+    }
+
+    const pdfFiles = files.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+    if (pdfFiles.length === 0) {
+      setMaterialError("Only PDF files are supported.");
+      return;
+    }
+
+    setIsUploadingMaterial(true);
+    setMaterialError(null);
+
+    let nextMaterials = sourceMaterialsRef.current;
+
+    try {
+      for (const file of pdfFiles) {
+        if (file.size > PDF_FILE_MAX_BYTES) {
+          throw new Error("PDF exceeds the 15 MB limit.");
+        }
+
+        const material = await uploadPdfMaterial(sessionId, file);
+        nextMaterials = upsertSourceMaterial(nextMaterials, material);
+      }
+
+      setSourceMaterials(nextMaterials);
+    } catch (error) {
+      setMaterialError(error instanceof Error ? error.message : "Failed to upload PDF.");
+    } finally {
+      setIsUploadingMaterial(false);
+    }
+  }
+
   async function submitChatRequest(input: string) {
     if (!input.trim()) {
       return;
@@ -1413,6 +1521,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const currentTopicId = currentTopic?.id ?? selectedTopicId ?? generatedTopicId;
 
     try {
+      const requestSourceMaterials = await ensureUrlMaterialsAttached(input);
       const response = await fetchApi("/api/reasoning/chat", {
         method: "POST",
         headers: {
@@ -1428,6 +1537,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           currentTopic: currentTopic ?? undefined,
           currentArtifacts: currentArtifacts.length > 0 ? currentArtifacts : undefined,
           useWebSearch,
+          sourceMaterials: requestSourceMaterials,
         }),
       });
 
@@ -1560,6 +1670,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           topicId,
           preferredBlockType: nextPreferredBlockType || undefined,
           useWebSearch,
+          sourceMaterials,
         }),
       });
 
@@ -1980,6 +2091,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const currentTopicId = currentTopic?.id ?? selectedTopicIdRef.current ?? generatedTopicIdRef.current ?? null;
     const currentArtifacts = buildCurrentArtifactsSnapshot();
     const chatHistory = options.chatHistory ?? getLiveChatHistory();
+    const requestSourceMaterials = await ensureUrlMaterialsAttached(options.message);
 
     const response = await fetchApi("/api/reasoning/chat", {
       method: "POST",
@@ -1996,6 +2108,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         currentTopic: currentTopic ?? undefined,
         currentArtifacts: currentArtifacts.length > 0 ? currentArtifacts : undefined,
         useWebSearch,
+        sourceMaterials: requestSourceMaterials,
       }),
     });
 
@@ -3160,11 +3273,26 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
                 </p>
               </div>
             ) : null}
-          </div>
+	          </div>
 
-          <div style={styles.chatComposer}>
-            <PromptComposer
-              goal={plannerInput}
+          {sourceMaterials.length > 0 || materialError ? (
+            <div style={styles.materialsPanelWrap}>
+              <SourceMaterialsPanel
+                title="Course Materials"
+                materials={sourceMaterials}
+                errorText={materialError}
+                resolveFileHref={(material) =>
+                  sessionId && material.kind === "pdf"
+                    ? buildLearnSessionMaterialFileHref(sessionId, material.id)
+                    : null
+                }
+              />
+            </div>
+          ) : null}
+
+	          <div style={styles.chatComposer}>
+	            <PromptComposer
+	              goal={plannerInput}
               onGoalChange={setPlannerInput}
               preferredBlockType={preferredBlockType}
               onPreferredBlockTypeChange={setPreferredBlockType}
@@ -3190,16 +3318,22 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
                 void submitChatRequest(inputSnapshot);
               }}
-              onLive={() => {
+	              onLive={() => {
                 if (launchSessionRoute("live")) {
                   return;
                 }
 
                 void toggleLiveConnection();
               }}
-              generateLabel={isPlanning ? "Stop" : "Send"}
-              generateBusy={isPlanning}
-              generateIconOnly
+	              generateLabel={isPlanning ? "Stop" : "Send"}
+                showAttach={Boolean(authSession?.user?.id && sessionId)}
+                onAttachPdfFiles={(files) => {
+                  void handleAttachPdfFiles(files);
+                }}
+                attachBusy={isUploadingMaterial}
+                attachDisabled={isUploadingMaterial || !sessionId}
+	              generateBusy={isPlanning}
+	              generateIconOnly
               liveLabel={getLiveActionLabel(liveStatus)}
               showMute={showMuteControl}
               muteLabel={isMicActive ? "Mute" : "Unmute"}
@@ -3472,6 +3606,9 @@ const styles: Record<string, CSSProperties> = {
     overscrollBehavior: "contain",
   },
   chatComposer: {
+    marginTop: "10px",
+  },
+  materialsPanelWrap: {
     marginTop: "10px",
   },
   sectionTitle: {

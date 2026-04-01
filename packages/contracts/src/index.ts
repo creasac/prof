@@ -155,6 +155,23 @@ export const groundingSourceSchema = z.object({
   uri: z.string().url(),
 });
 
+export const sourceMaterialKindSchema = z.enum(["url", "pdf"]);
+
+export const sourceMaterialSchema = z.object({
+  id: z.string().min(1).max(40),
+  kind: sourceMaterialKindSchema,
+  title: z.string().min(1).max(240),
+  createdAt: z.string().min(1),
+  sourceUrl: z.string().url().optional(),
+  resolvedUrl: z.string().url().optional(),
+  capture: z.string().min(1).max(80).optional(),
+  fileName: z.string().min(1).max(240).optional(),
+  mimeType: z.string().min(1).max(120).optional(),
+  sizeBytes: z.number().int().min(0).optional(),
+  storageKey: z.string().min(1).max(400).optional(),
+  textExcerpt: z.string().max(20000).optional().default(""),
+});
+
 export const learnSessionMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1),
@@ -190,6 +207,7 @@ export const courseSnapshotSchema = z.object({
   goal: z.string(),
   plan: coursePlanSchema.nullable(),
   planSources: z.array(groundingSourceSchema),
+  sourceMaterials: z.array(sourceMaterialSchema).optional().default([]),
   selectedTopicId: z.string().nullable(),
   generatedBlock: tutorBlockSchema.nullable(),
   generatedTopicId: z.string().nullable(),
@@ -209,6 +227,7 @@ export const learnSessionSnapshotSchema = z.object({
   plan: coursePlanSchema.nullable(),
   planClarification: planningClarificationSchema.nullable(),
   planSources: z.array(groundingSourceSchema),
+  sourceMaterials: z.array(sourceMaterialSchema).optional().default([]),
   selectedTopicId: z.string().nullable(),
   generatedBlock: tutorBlockSchema.nullable(),
   generatedTopicId: z.string().nullable(),
@@ -273,6 +292,7 @@ export const reasoningBlockRequestSchema = z.object({
   learnerContext: z.string().max(2000).optional().default(""),
   preferredBlockType: tutorBlockTypeSchema.optional(),
   useWebSearch: z.boolean().optional().default(false),
+  sourceMaterials: z.array(sourceMaterialSchema).max(12).optional().default([]),
 });
 
 export const reasoningPlanRequestSchema = z
@@ -283,6 +303,7 @@ export const reasoningPlanRequestSchema = z
     userInput: z.string().max(2000).optional().default(""),
     currentPlan: coursePlanSchema.optional(),
     useWebSearch: z.boolean().optional().default(false),
+    sourceMaterials: z.array(sourceMaterialSchema).max(12).optional().default([]),
   })
   .superRefine((value, ctx) => {
     if (value.mode !== "draft" && !value.userInput.trim()) {
@@ -510,6 +531,7 @@ export const plannedTopicBlockRequestSchema = z.object({
   topicId: z.string().min(1).max(80),
   preferredBlockType: tutorBlockTypeSchema.optional(),
   useWebSearch: z.boolean().optional().default(false),
+  sourceMaterials: z.array(sourceMaterialSchema).max(12).optional().default([]),
 });
 
 export const plannedTopicBlockResponseSchema = reasoningBlockResponseSchema.extend({
@@ -553,6 +575,8 @@ export type Flashcard = z.infer<typeof flashcardSchema>;
 export type FlashcardsBlock = z.infer<typeof flashcardsBlockSchema>;
 export type FollowUpQuestionBlock = z.infer<typeof followUpQuestionBlockSchema>;
 export type GroundingSource = z.infer<typeof groundingSourceSchema>;
+export type SourceMaterial = z.infer<typeof sourceMaterialSchema>;
+export type SourceMaterialKind = z.infer<typeof sourceMaterialKindSchema>;
 export type LessonBlock = z.infer<typeof lessonBlockSchema>;
 export type LessonBlueprint = z.infer<typeof lessonBlueprintSchema>;
 export type LessonPlan = z.infer<typeof lessonPlanSchema>;
@@ -626,6 +650,7 @@ export const reasoningChatRequestSchema = z.object({
   currentTopic: planTopicSchema.optional(),
   currentArtifacts: z.array(tutorBlockSchema).max(3).optional().default([]),
   useWebSearch: z.boolean().optional().default(false),
+  sourceMaterials: z.array(sourceMaterialSchema).max(12).optional().default([]),
 });
 
 export const reasoningChatResponseSchema = z.object({
@@ -637,6 +662,14 @@ export const reasoningChatResponseSchema = z.object({
   sources: groundingSourceSchema.array().optional(),
 });
 
+export const attachUrlRequestSchema = z.object({
+  url: z.string().url(),
+});
+
+export const sourceMaterialResponseSchema = z.object({
+  material: sourceMaterialSchema,
+});
+
 export type ReasoningResponseType = z.infer<typeof reasoningResponseTypeSchema>;
 export type ReasoningRequestType = z.infer<typeof reasoningRequestTypeSchema>;
 export type ReasoningUpdateTarget = z.infer<typeof reasoningUpdateTargetSchema>;
@@ -645,6 +678,8 @@ export type TutorBlock = z.infer<typeof tutorBlockSchema>;
 export type TutorBlockType = z.infer<typeof tutorBlockTypeSchema>;
 export type ReasoningChatRequest = z.infer<typeof reasoningChatRequestSchema>;
 export type ReasoningChatResponse = z.infer<typeof reasoningChatResponseSchema>;
+export type AttachUrlRequest = z.infer<typeof attachUrlRequestSchema>;
+export type SourceMaterialResponse = z.infer<typeof sourceMaterialResponseSchema>;
 
 const PUBLIC_ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 

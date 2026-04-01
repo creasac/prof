@@ -10,10 +10,12 @@ import type { CSSProperties, ReactNode } from "react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
 export type IconName =
+  | "attach"
   | "chevronDown"
   | "chevronRight"
   | "chevronUp"
   | "check"
+  | "file"
   | "live"
   | "message"
   | "mic"
@@ -42,6 +44,12 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   };
 
   switch (name) {
+    case "attach":
+      return (
+        <svg {...svgProps}>
+          <path d="M8.8 12.8 14.9 6.7a3.5 3.5 0 1 1 5 5l-8.3 8.3a5 5 0 1 1-7.1-7.1l8.4-8.4" />
+        </svg>
+      );
     case "chevronDown":
       return (
         <svg {...svgProps}>
@@ -65,6 +73,15 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
         <svg {...svgProps}>
           <circle cx="12" cy="12" r="9" />
           <path d="m8.5 12.2 2.2 2.3 4.8-5.2" />
+        </svg>
+      );
+    case "file":
+      return (
+        <svg {...svgProps}>
+          <path d="M8 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 7 20V5a1.5 1.5 0 0 1 1-1.4Z" />
+          <path d="M14 3.5V8h4" />
+          <path d="M9.5 12h5" />
+          <path d="M9.5 15h5" />
         </svg>
       );
     case "live":

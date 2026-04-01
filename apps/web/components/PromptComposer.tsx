@@ -1,7 +1,7 @@
 "use client";
 
 import type { TutorBlockType } from "@prof/contracts";
-import type { CSSProperties, KeyboardEvent } from "react";
+import { useRef, type CSSProperties, type KeyboardEvent } from "react";
 
 import { IconText } from "./TutorUi";
 
@@ -14,12 +14,17 @@ type PromptComposerProps = {
   onUseWebSearchChange: (value: boolean) => void;
   onGenerate: () => void;
   onLive: () => void;
+  onAttachPdfFiles?: (files: File[]) => void;
   onMute?: () => void;
   generateLabel?: string;
   liveLabel?: string;
+  attachLabel?: string;
   muteLabel?: string;
+  attachBusy?: boolean;
   generateBusy?: boolean;
   generateIconOnly?: boolean;
+  showAttach?: boolean;
+  attachDisabled?: boolean;
   generateDisabled?: boolean;
   liveDisabled?: boolean;
   muteDisabled?: boolean;
@@ -39,12 +44,17 @@ export function PromptComposer({
   onUseWebSearchChange,
   onGenerate,
   onLive,
+  onAttachPdfFiles,
   onMute,
   generateLabel = "Generate",
   liveLabel = "Live",
+  attachLabel = "PDF",
   muteLabel = "Mute",
+  attachBusy = false,
   generateBusy = false,
   generateIconOnly = false,
+  showAttach = false,
+  attachDisabled = false,
   generateDisabled = false,
   liveDisabled = false,
   muteDisabled = false,
@@ -56,6 +66,7 @@ export function PromptComposer({
 }: PromptComposerProps) {
   const isHome = variant === "home";
   const generateIcon = generateBusy ? "stop" : "send";
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey) {
@@ -71,6 +82,10 @@ export function PromptComposer({
     if (!generateDisabled) {
       onGenerate();
     }
+  }
+
+  function handleAttachClick() {
+    fileInputRef.current?.click();
   }
 
   return (
@@ -139,6 +154,35 @@ export function PromptComposer({
         </div>
 
         <div style={styles.actionsRow}>
+          {showAttach ? (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                multiple
+                style={styles.hiddenInput}
+                onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  if (files.length > 0) {
+                    onAttachPdfFiles?.(files);
+                  }
+                  event.currentTarget.value = "";
+                }}
+              />
+              <button
+                style={{
+                  ...styles.secondaryButton,
+                  ...(isHome ? null : styles.learnButton),
+                }}
+                type="button"
+                onClick={handleAttachClick}
+                disabled={attachDisabled}
+              >
+                <IconText icon="attach">{attachBusy ? "Uploading..." : attachLabel}</IconText>
+              </button>
+            </>
+          ) : null}
           {showMute ? (
             <button
               style={{
@@ -210,6 +254,9 @@ const styles: Record<string, CSSProperties> = {
     clip: "rect(0, 0, 0, 0)",
     whiteSpace: "nowrap",
     border: 0,
+  },
+  hiddenInput: {
+    display: "none",
   },
   textarea: {
     width: "100%",

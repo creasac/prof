@@ -275,7 +275,7 @@ export function buildChatPrompt(input: ReasoningChatRequest) {
     "If a current plan exists, reference relevant topics when generating artifacts.",
     "If current artifacts are provided, treat them as the authoritative source when answering questions or updating content.",
     "",
-    useWebSearch ? "If grounded web context is provided, use it when it is relevant." : "",
+    useWebSearch ? "If web search grounding is enabled, use it when it is relevant." : "",
     "",
     historyText ? `Conversation history:\n${historyText}\n` : "",
     `Current user message: ${input.message.trim()}`,

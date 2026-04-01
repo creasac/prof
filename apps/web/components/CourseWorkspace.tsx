@@ -10,7 +10,9 @@ import { forkRemoteCourse, loadRemoteCourse, updateRemoteCourseVisibility } from
 import { buildCourseHref, buildCourseQuizHref } from "../lib/course-route";
 import { collectCourseQuizzes, findTopicInPlan, pickSelectedTopicId, resolveCourseBlock } from "../lib/course-view";
 import { buildLearnHref, createLearnSessionId } from "../lib/learn-route";
+import { buildCourseMaterialFileHref } from "../lib/source-materials";
 import { PlannerView } from "./PlannerUi";
+import { SourceMaterialsPanel } from "./SourceMaterialsPanel";
 import { BlockView, IconText } from "./TutorUi";
 
 type CourseWorkspaceProps = {
@@ -233,6 +235,18 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
             </button>
           </div>
         </header>
+
+        {snapshot.sourceMaterials.length > 0 ? (
+          <SourceMaterialsPanel
+            title="Course Materials"
+            materials={snapshot.sourceMaterials}
+            resolveFileHref={(material) =>
+              material.kind === "pdf"
+                ? buildCourseMaterialFileHref(course.ownerUsername, course.courseSlug, material.id)
+                : null
+            }
+          />
+        ) : null}
 
         <section style={styles.workspace}>
           <article style={styles.panel}>

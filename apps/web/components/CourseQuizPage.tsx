@@ -275,7 +275,7 @@ export function CourseQuizPage({ username, courseSlug, quizIndex }: CourseQuizPa
                 <article key={`${question.prompt}-${index}`} style={styles.reviewCard}>
                   <p style={styles.questionKind}>{getQuestionKindLabel(question)}</p>
                   <h2 style={styles.reviewPrompt}>{question.prompt}</h2>
-                  <p style={styles.bodyText}>{question.explanation}</p>
+                  <p style={styles.bodyText}>{question.kind === "short_answer" ? question.rubric : question.explanation}</p>
                 </article>
               ))}
             </div>
