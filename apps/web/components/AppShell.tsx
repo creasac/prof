@@ -17,11 +17,11 @@ import { AuthDock } from "./AuthDock";
 import { Icon } from "./TutorUi";
 
 const DESKTOP_MEDIA_QUERY = "(min-width: 960px)";
-const DRAWER_WIDTH = 320;
-const DRAWER_RAIL_WIDTH = 72;
-const DESKTOP_CONTENT_OFFSET = DRAWER_WIDTH + 24;
-const DESKTOP_RAIL_OFFSET = DRAWER_RAIL_WIDTH + 20;
-const MOBILE_CONTENT_OFFSET = DRAWER_RAIL_WIDTH + 12;
+const DRAWER_WIDTH = 296;
+const DRAWER_RAIL_WIDTH = 62;
+const DESKTOP_CONTENT_OFFSET = DRAWER_WIDTH + 18;
+const DESKTOP_RAIL_OFFSET = DRAWER_RAIL_WIDTH + 16;
+const MOBILE_CONTENT_OFFSET = DRAWER_RAIL_WIDTH + 10;
 
 function getSessionUsername(session: ReturnType<typeof authClient.useSession>["data"]) {
   if (!session?.user || !("username" in session.user)) {
@@ -479,16 +479,16 @@ const styles: Record<string, CSSProperties> = {
   },
   drawerRail: {
     width: "100%",
-    padding: "18px 12px",
+    padding: "14px 10px",
     display: "flex",
     justifyContent: "center",
   },
   drawerHeader: {
-    padding: "18px 18px 12px",
+    padding: "14px 14px 10px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: "12px",
+    gap: "10px",
     borderBottom: "1px solid rgba(94, 73, 61, 0.1)",
   },
   brandLink: {
@@ -498,23 +498,23 @@ const styles: Record<string, CSSProperties> = {
     textDecoration: "none",
   },
   brandIcon: {
-    width: "40px",
-    height: "40px",
-    borderRadius: "12px",
+    width: "36px",
+    height: "36px",
+    borderRadius: "10px",
   },
   drawerBody: {
     flex: 1,
     minHeight: 0,
     overflowY: "auto",
-    padding: "16px 14px 20px",
+    padding: "12px 10px 14px",
     display: "flex",
     flexDirection: "column",
-    gap: "18px",
+    gap: "14px",
   },
   toggleButton: {
-    width: "40px",
-    height: "40px",
-    borderRadius: "12px",
+    width: "36px",
+    height: "36px",
+    borderRadius: "10px",
     border: "1px solid rgba(94, 73, 61, 0.12)",
     background: "rgba(255, 255, 255, 0.9)",
     color: "var(--text)",
@@ -527,16 +527,16 @@ const styles: Record<string, CSSProperties> = {
   learnButton: {
     width: "100%",
     border: "1px solid rgba(138, 55, 21, 0.12)",
-    borderRadius: "18px",
+    borderRadius: "16px",
     background: "linear-gradient(135deg, rgba(255, 246, 239, 0.96), rgba(255, 255, 255, 0.94))",
     color: "var(--text)",
-    padding: "14px 16px",
+    padding: "11px 13px",
     display: "flex",
     alignItems: "center",
-    gap: "12px",
+    gap: "10px",
     cursor: "pointer",
     textAlign: "left",
-    fontSize: "0.98rem",
+    fontSize: "0.94rem",
     fontWeight: 600,
     letterSpacing: "-0.01em",
   },
@@ -546,9 +546,9 @@ const styles: Record<string, CSSProperties> = {
     color: "var(--accent-strong)",
   },
   buttonIconWrap: {
-    width: "28px",
-    height: "28px",
-    borderRadius: "10px",
+    width: "24px",
+    height: "24px",
+    borderRadius: "8px",
     background: "rgba(191, 91, 44, 0.12)",
     display: "inline-flex",
     alignItems: "center",
@@ -559,7 +559,7 @@ const styles: Record<string, CSSProperties> = {
   section: {
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
+    gap: "8px",
   },
   sectionHeading: {
     display: "flex",
@@ -567,7 +567,7 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: "space-between",
     padding: "0 4px",
     color: "#5e493d",
-    fontSize: "0.86rem",
+    fontSize: "0.8rem",
     fontWeight: 700,
     letterSpacing: "0.06em",
     textTransform: "uppercase",
@@ -582,7 +582,7 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: "space-between",
     color: "#5e493d",
     cursor: "pointer",
-    fontSize: "0.86rem",
+    fontSize: "0.8rem",
     fontWeight: 700,
     letterSpacing: "0.06em",
     textTransform: "uppercase",
@@ -590,23 +590,23 @@ const styles: Record<string, CSSProperties> = {
   sectionBody: {
     display: "flex",
     flexDirection: "column",
-    gap: "8px",
+    gap: "6px",
   },
   list: {
     display: "flex",
     flexDirection: "column",
-    gap: "6px",
+    gap: "4px",
   },
   listItem: {
     width: "100%",
     border: "1px solid transparent",
-    borderRadius: "14px",
+    borderRadius: "12px",
     background: "transparent",
     color: "var(--text)",
-    padding: "10px 12px",
+    padding: "8px 10px",
     cursor: "pointer",
     textAlign: "left",
-    fontSize: "0.95rem",
+    fontSize: "0.9rem",
     lineHeight: 1.35,
   },
   listItemActive: {
@@ -617,14 +617,14 @@ const styles: Record<string, CSSProperties> = {
   historyList: {
     display: "flex",
     flexDirection: "column",
-    gap: "8px",
+    gap: "6px",
   },
   historyItem: {
     width: "100%",
     border: "1px solid transparent",
-    borderRadius: "16px",
+    borderRadius: "14px",
     background: "rgba(255, 255, 255, 0.52)",
-    padding: "11px 12px",
+    padding: "9px 10px",
     display: "flex",
     flexDirection: "column",
     gap: "4px",
@@ -637,27 +637,27 @@ const styles: Record<string, CSSProperties> = {
   },
   historyItemTitle: {
     color: "var(--text)",
-    fontSize: "0.94rem",
+    fontSize: "0.89rem",
     fontWeight: 600,
     lineHeight: 1.3,
   },
   historyItemMeta: {
     color: "var(--muted)",
-    fontSize: "0.78rem",
+    fontSize: "0.74rem",
     lineHeight: 1.3,
   },
   emptyText: {
     margin: 0,
     padding: "0 4px",
     color: "var(--muted)",
-    fontSize: "0.9rem",
+    fontSize: "0.86rem",
     lineHeight: 1.45,
   },
   errorText: {
     margin: 0,
     padding: "0 4px",
     color: "#a22e2e",
-    fontSize: "0.86rem",
+    fontSize: "0.8rem",
     lineHeight: 1.45,
   },
 };
