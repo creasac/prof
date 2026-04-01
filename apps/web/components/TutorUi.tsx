@@ -17,8 +17,10 @@ export type IconName =
   | "check"
   | "file"
   | "live"
+  | "menu"
   | "message"
   | "mic"
+  | "plus"
   | "plug"
   | "search"
   | "send"
@@ -94,6 +96,14 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
           <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
         </svg>
       );
+    case "menu":
+      return (
+        <svg {...svgProps}>
+          <path d="M5 7.5h14" />
+          <path d="M5 12h14" />
+          <path d="M5 16.5h14" />
+        </svg>
+      );
     case "message":
       return (
         <svg {...svgProps}>
@@ -107,6 +117,13 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
           <path d="M7.5 11.5a4.5 4.5 0 0 0 9 0" />
           <path d="M12 16v3.5" />
           <path d="M9.2 19.5h5.6" />
+        </svg>
+      );
+    case "plus":
+      return (
+        <svg {...svgProps}>
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
         </svg>
       );
     case "plug":

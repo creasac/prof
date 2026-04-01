@@ -5,6 +5,8 @@ import {
   type LearnSessionSummary,
 } from "@prof/contracts";
 
+import { notifyLocalSessionHistoryUpdated } from "./app-shell-events";
+
 const LEARN_SESSION_STORAGE_PREFIX = "prof.learn.session.v1:";
 const LEARN_SESSION_INDEX_STORAGE_KEY = `${LEARN_SESSION_STORAGE_PREFIX}index`;
 
@@ -114,6 +116,7 @@ export function writeLearnSessionSnapshot(sessionId: string, snapshot: LearnSess
         updatedAt: now,
       },
     });
+    notifyLocalSessionHistoryUpdated();
   } catch {
     // Ignore storage failures and keep the live in-memory state working.
   }

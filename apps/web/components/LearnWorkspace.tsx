@@ -42,6 +42,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { authClient } from "../lib/auth-client";
 import { fetchApi } from "../lib/api";
+import { notifyCourseLibraryUpdated } from "../lib/app-shell-events";
 import { buildCourseHref } from "../lib/course-route";
 import { loadRemoteCourse } from "../lib/course-api";
 import {
@@ -797,6 +798,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const lastLiveContextSentRef = useRef<string>("");
   const disconnectRequestedRef = useRef(false);
   const liveGoalRef = useRef<string | null>(null);
+  const courseRef = useRef<CourseRef | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const chatBodyRef = useRef<HTMLDivElement | null>(null);
   const chatAutoScrollLockedRef = useRef(false);
@@ -853,6 +855,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   useEffect(() => {
     goalRef.current = goal;
   }, [goal]);
+
+  useEffect(() => {
+    courseRef.current = course;
+  }, [course]);
 
   useEffect(() => {
     const nextGoal = normalizeGoalText(routeState.goal);
@@ -1192,6 +1198,18 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         .then((persistedSession) => {
           writeLearnSessionSnapshot(sessionId, persistedSession.snapshot);
           const nextCourse = persistedSession.snapshot.course ?? null;
+          const currentCourse = courseRef.current;
+          const currentCourseKey = currentCourse
+            ? `${currentCourse.courseId}:${currentCourse.ownerUsername}:${currentCourse.courseSlug}:${currentCourse.title}`
+            : "";
+          const nextCourseKey = nextCourse
+            ? `${nextCourse.courseId}:${nextCourse.ownerUsername}:${nextCourse.courseSlug}:${nextCourse.title}`
+            : "";
+
+          if (currentCourseKey !== nextCourseKey) {
+            notifyCourseLibraryUpdated();
+          }
+
           setCourse((current) => {
             const currentKey = current
               ? `${current.courseId}:${current.ownerUsername}:${current.courseSlug}:${current.title}`
