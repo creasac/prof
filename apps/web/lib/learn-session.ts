@@ -17,6 +17,13 @@ type LearnSessionStorageIndexRecord = {
 
 type LearnSessionStorageIndex = Record<string, LearnSessionStorageIndexRecord>;
 
+type WriteLearnSessionSnapshotOptions = {
+  createdAt?: string;
+  updatedAt?: string;
+  trackInHistory?: boolean;
+  notifyHistoryUpdate?: boolean;
+};
+
 function getLearnSessionStorageKey(sessionId: string) {
   return `${LEARN_SESSION_STORAGE_PREFIX}${sessionId}`;
 }
@@ -51,40 +58,6 @@ function writeLearnSessionIndex(index: LearnSessionStorageIndex) {
   }
 }
 
-function listStoredLearnSessionIds() {
-  if (typeof window === "undefined") {
-    return [] as string[];
-  }
-
-  const ids = new Set(Object.keys(readLearnSessionIndex()));
-
-  try {
-    for (let index = 0; index < window.sessionStorage.length; index += 1) {
-      const key = window.sessionStorage.key(index);
-      if (!key || key === LEARN_SESSION_INDEX_STORAGE_KEY || !key.startsWith(LEARN_SESSION_STORAGE_PREFIX)) {
-        continue;
-      }
-
-      ids.add(key.slice(LEARN_SESSION_STORAGE_PREFIX.length));
-    }
-  } catch {
-    return Array.from(ids);
-  }
-
-  return Array.from(ids);
-}
-
-function inferSessionTimestamp(snapshot: LearnSessionSnapshot) {
-  const candidates = [...(snapshot.chatMessages ?? []), ...(snapshot.liveMessages ?? [])]
-    .map((message) => message.createdAt)
-    .filter((value): value is string => Boolean(value))
-    .map((value) => ({ value, timestamp: Date.parse(value) }))
-    .filter((entry) => Number.isFinite(entry.timestamp))
-    .sort((left, right) => right.timestamp - left.timestamp);
-
-  return candidates[0]?.value ?? new Date(0).toISOString();
-}
-
 export function readLearnSessionSnapshot(sessionId: string) {
   if (typeof window === "undefined") {
     return null;
@@ -98,13 +71,65 @@ export function readLearnSessionSnapshot(sessionId: string) {
   }
 }
 
-export function writeLearnSessionSnapshot(sessionId: string, snapshot: LearnSessionSnapshot) {
+export function readLocalLearnSessionTimestamps(sessionId: string) {
+  const timestamps = readLearnSessionIndex()[sessionId];
+  return timestamps ? { ...timestamps } : null;
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableSerialize(entry)).join(",")}]`;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`).join(",")}}`;
+}
+
+export function serializeLearnSessionSnapshot(snapshot: LearnSessionSnapshot) {
+  return stableSerialize(learnSessionSnapshotSchema.parse(snapshot));
+}
+
+export function serializeLearnSessionActivity(snapshot: LearnSessionSnapshot) {
+  return stableSerialize({
+    sourceMaterials: snapshot.sourceMaterials ?? [],
+    plan: snapshot.plan,
+    planClarification: snapshot.planClarification,
+    planSources: snapshot.planSources,
+    generatedBlock: snapshot.generatedBlock,
+    generatedTopicId: snapshot.generatedTopicId,
+    generatedQuiz: snapshot.generatedQuiz,
+    generatedQuizTopicId: snapshot.generatedQuizTopicId,
+    generatedQuizError: snapshot.generatedQuizError,
+    quizProgress: snapshot.quizProgress,
+    quizResultsByTopic: snapshot.quizResultsByTopic ?? {},
+    topicArtifacts: snapshot.topicArtifacts ?? {},
+    blockSources: snapshot.blockSources,
+    chatMessages: snapshot.chatMessages ?? [],
+    liveMessages: snapshot.liveMessages ?? [],
+    liveGoal: snapshot.liveGoal,
+  });
+}
+
+export function writeLearnSessionSnapshot(
+  sessionId: string,
+  snapshot: LearnSessionSnapshot,
+  options: WriteLearnSessionSnapshotOptions = {},
+) {
   if (typeof window === "undefined") {
     return;
   }
 
   try {
     window.sessionStorage.setItem(getLearnSessionStorageKey(sessionId), JSON.stringify(snapshot));
+
+    if (options.trackInHistory === false) {
+      return;
+    }
+
     const now = new Date().toISOString();
     const currentIndex = readLearnSessionIndex();
     const previousEntry = currentIndex[sessionId];
@@ -112,11 +137,14 @@ export function writeLearnSessionSnapshot(sessionId: string, snapshot: LearnSess
     writeLearnSessionIndex({
       ...currentIndex,
       [sessionId]: {
-        createdAt: previousEntry?.createdAt ?? now,
-        updatedAt: now,
+        createdAt: options.createdAt ?? previousEntry?.createdAt ?? options.updatedAt ?? now,
+        updatedAt: options.updatedAt ?? now,
       },
     });
-    notifyLocalSessionHistoryUpdated();
+
+    if (options.notifyHistoryUpdate !== false) {
+      notifyLocalSessionHistoryUpdated();
+    }
   } catch {
     // Ignore storage failures and keep the live in-memory state working.
   }
@@ -130,22 +158,19 @@ export function listLocalLearnSessionSummaries() {
   const index = readLearnSessionIndex();
   const summaries: LearnSessionSummary[] = [];
 
-  for (const sessionId of listStoredLearnSessionIds()) {
+  for (const sessionId of Object.keys(index)) {
     const snapshot = readLearnSessionSnapshot(sessionId);
     if (!snapshot) {
       continue;
     }
 
     const timestamps = index[sessionId];
-    const updatedAt = timestamps?.updatedAt ?? inferSessionTimestamp(snapshot);
-    const createdAt = timestamps?.createdAt ?? updatedAt;
-
     summaries.push(
       createLearnSessionSummary({
         sessionId,
         snapshot,
-        createdAt,
-        updatedAt,
+        createdAt: timestamps.createdAt,
+        updatedAt: timestamps.updatedAt,
       }),
     );
   }

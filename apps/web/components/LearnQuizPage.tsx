@@ -2,10 +2,16 @@
 
 import type { LearnSessionSnapshot, QuizBlock } from "@prof/contracts";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { authClient } from "../lib/auth-client";
-import { readLearnSessionSnapshot, writeLearnSessionSnapshot } from "../lib/learn-session";
+import {
+  readLocalLearnSessionTimestamps,
+  readLearnSessionSnapshot,
+  serializeLearnSessionActivity,
+  serializeLearnSessionSnapshot,
+  writeLearnSessionSnapshot,
+} from "../lib/learn-session";
 import { loadRemoteLearnSession, saveRemoteLearnSession } from "../lib/learn-session-api";
 import { buildLearnHref } from "../lib/learn-route";
 import {
@@ -30,6 +36,9 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
   const [progress, setProgress] = useState<QuizProgress | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
+  const lastCachedSnapshotKeyRef = useRef<string | null>(null);
+  const lastTrackedActivityKeyRef = useRef<string | null>(null);
+  const sessionTimestampsRef = useRef<{ createdAt: string; updatedAt: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,12 +49,19 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
       }
 
       let nextSnapshot = readLearnSessionSnapshot(sessionId);
+      let nextTimestamps = readLocalLearnSessionTimestamps(sessionId);
 
-      if (authSession?.user?.id) {
+      if (authSession?.user?.id && !nextSnapshot) {
         try {
-          const remoteSession = await loadRemoteLearnSession(sessionId);
+          const remoteSession = await loadRemoteLearnSession(sessionId, {
+            cacheKey: authSession.user.id,
+          });
           if (!cancelled && remoteSession) {
             nextSnapshot = remoteSession.snapshot;
+            nextTimestamps = {
+              createdAt: remoteSession.createdAt,
+              updatedAt: remoteSession.updatedAt,
+            };
           }
         } catch (error) {
           console.error(error);
@@ -58,11 +74,37 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
 
       const nextQuiz = getGeneratedQuiz(nextSnapshot);
       const nextTopicId = nextSnapshot?.generatedQuizTopicId ?? nextSnapshot?.generatedTopicId ?? null;
+      const nextProgress = nextQuiz ? ensureQuizProgress(nextQuiz, nextSnapshot?.quizProgress, nextTopicId) : null;
+      const hydratedSnapshot =
+        nextSnapshot && nextProgress
+          ? {
+              ...nextSnapshot,
+              quizProgress: nextProgress,
+              quizResultsByTopic: nextSnapshot.quizResultsByTopic ?? {},
+            }
+          : nextSnapshot;
 
-      setSnapshot(nextSnapshot);
+      if (hydratedSnapshot && nextTimestamps) {
+        writeLearnSessionSnapshot(sessionId, hydratedSnapshot, {
+          createdAt: nextTimestamps.createdAt,
+          updatedAt: nextTimestamps.updatedAt,
+          notifyHistoryUpdate: false,
+        });
+      }
+
+      if (hydratedSnapshot) {
+        lastCachedSnapshotKeyRef.current = serializeLearnSessionSnapshot(hydratedSnapshot);
+        lastTrackedActivityKeyRef.current = serializeLearnSessionActivity(hydratedSnapshot);
+      } else {
+        lastCachedSnapshotKeyRef.current = null;
+        lastTrackedActivityKeyRef.current = null;
+      }
+      sessionTimestampsRef.current = nextTimestamps;
+
+      setSnapshot(hydratedSnapshot);
       setQuiz(nextQuiz);
       setTopicId(nextTopicId);
-      setProgress(nextQuiz ? ensureQuizProgress(nextQuiz, nextSnapshot?.quizProgress, nextTopicId) : null);
+      setProgress(nextProgress);
       setCurrentQuestionIndex(0);
       setIsLoaded(true);
     }
@@ -75,7 +117,7 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
   }, [authSession?.user?.id, isAuthPending, sessionId]);
 
   useEffect(() => {
-    if (!progress) {
+    if (!progress || !isLoaded) {
       return;
     }
 
@@ -99,15 +141,54 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
         };
       }
 
-      writeLearnSessionSnapshot(sessionId, nextSnapshot);
+      const snapshotKey = serializeLearnSessionSnapshot(nextSnapshot);
+      if (snapshotKey === lastCachedSnapshotKeyRef.current) {
+        return nextSnapshot;
+      }
+
+      const activityKey = serializeLearnSessionActivity(nextSnapshot);
+      const hasTrackedActivityChange = activityKey !== lastTrackedActivityKeyRef.current;
+
+      writeLearnSessionSnapshot(sessionId, nextSnapshot, {
+        createdAt: sessionTimestampsRef.current?.createdAt,
+        trackInHistory: hasTrackedActivityChange,
+      });
+      lastCachedSnapshotKeyRef.current = snapshotKey;
+
+      if (!hasTrackedActivityChange) {
+        return nextSnapshot;
+      }
+
+      lastTrackedActivityKeyRef.current = activityKey;
+      sessionTimestampsRef.current = {
+        createdAt: sessionTimestampsRef.current?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
       if (authSession?.user?.id) {
-        void saveRemoteLearnSession(sessionId, nextSnapshot).catch((error) => {
-          console.error(error);
-        });
+        void saveRemoteLearnSession(sessionId, nextSnapshot, {
+          cacheKey: authSession.user.id,
+        })
+          .then((persistedSession) => {
+            sessionTimestampsRef.current = {
+              createdAt: persistedSession.createdAt,
+              updatedAt: persistedSession.updatedAt,
+            };
+            lastCachedSnapshotKeyRef.current = serializeLearnSessionSnapshot(persistedSession.snapshot);
+            lastTrackedActivityKeyRef.current = serializeLearnSessionActivity(persistedSession.snapshot);
+            writeLearnSessionSnapshot(sessionId, persistedSession.snapshot, {
+              createdAt: persistedSession.createdAt,
+              updatedAt: persistedSession.updatedAt,
+              notifyHistoryUpdate: false,
+            });
+          })
+          .catch((error) => {
+            console.error(error);
+          });
       }
       return nextSnapshot;
     });
-  }, [authSession?.user?.id, progress, quiz, sessionId, topicId]);
+  }, [authSession?.user?.id, isLoaded, progress, quiz, sessionId, topicId]);
 
   const result = useMemo(() => {
     if (!quiz || !progress || !progress.submitted) {

@@ -143,7 +143,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       if (authSession?.user?.id) {
         try {
-          remoteEntries = await loadRemoteLearnSessionSummaries();
+          remoteEntries = await loadRemoteLearnSessionSummaries({
+            cacheKey: authSession.user.id,
+          });
         } catch (error) {
           nextHistoryError = toErrorMessage(error, "Failed to load saved learn sessions.");
         }
@@ -176,7 +178,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authSession?.user?.id, pathname, sessionUsername]);
+  }, [authSession?.user?.id, sessionUsername]);
 
   useEffect(() => {
     const handleLocalHistoryUpdated = () => {

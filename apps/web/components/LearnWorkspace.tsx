@@ -47,7 +47,10 @@ import { buildCourseHref } from "../lib/course-route";
 import { loadRemoteCourse } from "../lib/course-api";
 import {
   listLocalLearnSessionSummaries,
+  readLocalLearnSessionTimestamps,
   readLearnSessionSnapshot,
+  serializeLearnSessionActivity,
+  serializeLearnSessionSnapshot,
   writeLearnSessionSnapshot,
 } from "../lib/learn-session";
 import {
@@ -809,6 +812,9 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const generatedSectionRef = useRef<HTMLElement | null>(null);
   const companionQuizRequestRef = useRef<string | null>(null);
   const remoteSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCachedSnapshotKeyRef = useRef<string | null>(null);
+  const lastTrackedActivityKeyRef = useRef<string | null>(null);
+  const sessionTimestampsRef = useRef<{ createdAt: string; updatedAt: string } | null>(null);
 
   useEffect(() => {
     void loadConfig();
@@ -946,13 +952,21 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       }
 
       const localSnapshot = readLearnSessionSnapshot(sessionId);
+      const localTimestamps = readLocalLearnSessionTimestamps(sessionId);
       let snapshot: LearnSessionSnapshot | null = localSnapshot;
+      let nextTimestamps = localTimestamps;
 
-      if (authSession?.user?.id) {
+      if (authSession?.user?.id && !snapshot) {
         try {
-          const remoteSession = await loadRemoteLearnSession(sessionId);
+          const remoteSession = await loadRemoteLearnSession(sessionId, {
+            cacheKey: authSession.user.id,
+          });
           if (!cancelled && remoteSession) {
             snapshot = remoteSession.snapshot;
+            nextTimestamps = {
+              createdAt: remoteSession.createdAt,
+              updatedAt: remoteSession.updatedAt,
+            };
           }
         } catch (error) {
           console.error(error);
@@ -986,81 +1000,104 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         normalizeGoalText(routeState.goal) ||
         (routeGoalSeedRef.current.sessionId === sessionId ? routeGoalSeedRef.current.goal : "");
 
-      if (snapshot) {
-        setCourse(snapshot.course ?? null);
-        setGoal(resolveStoredGoalValue(snapshot.goal, snapshot.plan, snapshot.course ?? null));
-        setPlannerInput(snapshot.plannerInput);
-        setPreferredBlockType(snapshot.preferredBlockType);
-        setUseWebSearch(snapshot.useWebSearch);
-        setPlan(snapshot.plan);
-        setPlanClarification(snapshot.planClarification);
-        setPlanSources(snapshot.planSources);
-        setSourceMaterials(snapshot.sourceMaterials ?? []);
-        setStreamedRequestType(null);
-        setStreamedPlanTitle("");
-        setStreamedTopics([]);
-        setSelectedTopicId(snapshot.selectedTopicId);
-        setStreamedGeneratedBlock(null);
-        setGeneratedBlock(snapshot.generatedBlock);
-        setGeneratedTopicId(snapshot.generatedTopicId);
-        setGeneratedQuiz(
-          snapshot.generatedQuiz ?? (snapshot.generatedBlock?.type === "quiz" ? snapshot.generatedBlock : null),
-        );
-        setGeneratedQuizTopicId(
-          snapshot.generatedQuizTopicId ?? (snapshot.generatedBlock?.type === "quiz" ? snapshot.generatedTopicId : null),
-        );
-        setGeneratedQuizError(snapshot.generatedQuizError);
-        setQuizProgress(snapshot.quizProgress);
-        setQuizResultsByTopic(snapshot.quizResultsByTopic ?? {});
-        setTopicArtifacts(snapshot.topicArtifacts ?? {});
-        setIsGeneratingQuiz(false);
-        companionQuizRequestRef.current = null;
-        setBlockSources(snapshot.blockSources);
-        setChatMessages((snapshot.chatMessages ?? []).map((message) => ensureSessionMessage(message, "chat")));
-        const storedLiveMessages = (snapshot.liveMessages ?? []).map((message) => ensureSessionMessage(message, "live"));
-        setLiveMessages(storedLiveMessages);
-        lastLiveUserMessageRef.current =
-          [...storedLiveMessages].reverse().find((message) => message.role === "user")?.content ?? null;
-        setLiveInputDraft(snapshot.liveInputDraft ?? snapshot.inputTranscript ?? "");
-        setLiveOutputDraft(snapshot.liveOutputDraft ?? snapshot.outputTranscript ?? "");
-        setLeftPanePercent(clampPanePercent(snapshot.leftPanePercent));
-        setIsLearnPanelCollapsed(snapshot.learnPanelCollapsed ?? false);
-        liveGoalRef.current = snapshot.liveGoal;
-      } else {
-        setCourse(null);
-        setGoal(routeGoalSeed);
-        setPlannerInput(shouldPrefillPlannerInput ? routeGoalSeed : "");
-        setPreferredBlockType(routeState.preferredBlockType);
-        setUseWebSearch(routeState.useWebSearch);
-        setPlan(null);
-        setPlanClarification(null);
-        setPlanSources([]);
-        setSourceMaterials([]);
-        setStreamedRequestType(null);
-        setStreamedPlanTitle("");
-        setStreamedTopics([]);
-        setSelectedTopicId(null);
-        setStreamedGeneratedBlock(null);
-        setGeneratedBlock(null);
-        setGeneratedTopicId(null);
-        setGeneratedQuiz(null);
-        setGeneratedQuizTopicId(null);
-        setGeneratedQuizError(null);
-        setQuizProgress(null);
-        setQuizResultsByTopic({});
-        setTopicArtifacts({});
-        setIsGeneratingQuiz(false);
-        companionQuizRequestRef.current = null;
-        setBlockSources([]);
-        setChatMessages([]);
-        setLiveMessages([]);
-        setLiveInputDraft("");
-        setLiveOutputDraft("");
-        setLeftPanePercent(DEFAULT_LEFT_PANE_PERCENT);
-        setIsLearnPanelCollapsed(false);
-        liveGoalRef.current = null;
-        lastLiveUserMessageRef.current = null;
+      const nextChatMessages = (snapshot?.chatMessages ?? []).map((message) => ensureSessionMessage(message, "chat"));
+      const nextLiveMessages = (snapshot?.liveMessages ?? []).map((message) => ensureSessionMessage(message, "live"));
+      const nextSnapshot: LearnSessionSnapshot = snapshot
+        ? {
+            ...snapshot,
+            sourceMaterials: snapshot.sourceMaterials ?? [],
+            planSources: snapshot.planSources,
+            generatedQuiz:
+              snapshot.generatedQuiz ?? (snapshot.generatedBlock?.type === "quiz" ? snapshot.generatedBlock : null),
+            generatedQuizTopicId:
+              snapshot.generatedQuizTopicId ?? (snapshot.generatedBlock?.type === "quiz" ? snapshot.generatedTopicId : null),
+            quizResultsByTopic: snapshot.quizResultsByTopic ?? {},
+            topicArtifacts: snapshot.topicArtifacts ?? {},
+            blockSources: snapshot.blockSources,
+            chatMessages: nextChatMessages,
+            liveMessages: nextLiveMessages,
+            liveInputDraft: snapshot.liveInputDraft ?? snapshot.inputTranscript ?? "",
+            liveOutputDraft: snapshot.liveOutputDraft ?? snapshot.outputTranscript ?? "",
+            leftPanePercent: clampPanePercent(snapshot.leftPanePercent),
+            learnPanelCollapsed: snapshot.learnPanelCollapsed ?? false,
+            liveGoal: snapshot.liveGoal,
+          }
+        : {
+            courseId: null,
+            course: null,
+            goal: routeGoalSeed,
+            plannerInput: shouldPrefillPlannerInput ? routeGoalSeed : "",
+            preferredBlockType: routeState.preferredBlockType,
+            useWebSearch: routeState.useWebSearch,
+            plan: null,
+            planClarification: null,
+            planSources: [],
+            sourceMaterials: [],
+            selectedTopicId: null,
+            generatedBlock: null,
+            generatedTopicId: null,
+            generatedQuiz: null,
+            generatedQuizTopicId: null,
+            generatedQuizError: null,
+            quizProgress: null,
+            quizResultsByTopic: {},
+            topicArtifacts: {},
+            blockSources: [],
+            chatMessages: [],
+            liveMessages: [],
+            liveInputDraft: "",
+            liveOutputDraft: "",
+            leftPanePercent: DEFAULT_LEFT_PANE_PERCENT,
+            learnPanelCollapsed: false,
+            liveGoal: null,
+          };
+
+      sessionTimestampsRef.current = nextTimestamps;
+      lastCachedSnapshotKeyRef.current = serializeLearnSessionSnapshot(nextSnapshot);
+      lastTrackedActivityKeyRef.current = serializeLearnSessionActivity(nextSnapshot);
+
+      if (nextTimestamps) {
+        writeLearnSessionSnapshot(sessionId, nextSnapshot, {
+          createdAt: nextTimestamps.createdAt,
+          updatedAt: nextTimestamps.updatedAt,
+          notifyHistoryUpdate: false,
+        });
       }
+
+      setCourse(nextSnapshot.course ?? null);
+      setGoal(resolveStoredGoalValue(nextSnapshot.goal, nextSnapshot.plan, nextSnapshot.course ?? null));
+      setPlannerInput(nextSnapshot.plannerInput);
+      setPreferredBlockType(nextSnapshot.preferredBlockType);
+      setUseWebSearch(nextSnapshot.useWebSearch);
+      setPlan(nextSnapshot.plan);
+      setPlanClarification(nextSnapshot.planClarification);
+      setPlanSources(nextSnapshot.planSources);
+      setSourceMaterials(nextSnapshot.sourceMaterials ?? []);
+      setStreamedRequestType(null);
+      setStreamedPlanTitle("");
+      setStreamedTopics([]);
+      setSelectedTopicId(nextSnapshot.selectedTopicId);
+      setStreamedGeneratedBlock(null);
+      setGeneratedBlock(nextSnapshot.generatedBlock);
+      setGeneratedTopicId(nextSnapshot.generatedTopicId);
+      setGeneratedQuiz(nextSnapshot.generatedQuiz);
+      setGeneratedQuizTopicId(nextSnapshot.generatedQuizTopicId);
+      setGeneratedQuizError(nextSnapshot.generatedQuizError);
+      setQuizProgress(nextSnapshot.quizProgress);
+      setQuizResultsByTopic(nextSnapshot.quizResultsByTopic ?? {});
+      setTopicArtifacts(nextSnapshot.topicArtifacts ?? {});
+      setIsGeneratingQuiz(false);
+      companionQuizRequestRef.current = null;
+      setBlockSources(nextSnapshot.blockSources);
+      setChatMessages(nextChatMessages);
+      setLiveMessages(nextLiveMessages);
+      lastLiveUserMessageRef.current =
+        [...nextLiveMessages].reverse().find((message) => message.role === "user")?.content ?? null;
+      setLiveInputDraft(nextSnapshot.liveInputDraft ?? "");
+      setLiveOutputDraft(nextSnapshot.liveOutputDraft ?? "");
+      setLeftPanePercent(nextSnapshot.leftPanePercent);
+      setIsLearnPanelCollapsed(nextSnapshot.learnPanelCollapsed ?? false);
+      liveGoalRef.current = nextSnapshot.liveGoal;
 
       setIsSessionHydrated(true);
     }
@@ -1181,8 +1218,29 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       learnPanelCollapsed: isLearnPanelCollapsed,
       liveGoal: liveGoalRef.current,
     };
+    const snapshotKey = serializeLearnSessionSnapshot(snapshot);
+    if (snapshotKey === lastCachedSnapshotKeyRef.current) {
+      return;
+    }
 
-    writeLearnSessionSnapshot(sessionId, snapshot);
+    const activityKey = serializeLearnSessionActivity(snapshot);
+    const hasTrackedActivityChange = activityKey !== lastTrackedActivityKeyRef.current;
+
+    writeLearnSessionSnapshot(sessionId, snapshot, {
+      createdAt: sessionTimestampsRef.current?.createdAt,
+      trackInHistory: hasTrackedActivityChange,
+    });
+    lastCachedSnapshotKeyRef.current = snapshotKey;
+
+    if (!hasTrackedActivityChange) {
+      return;
+    }
+
+    lastTrackedActivityKeyRef.current = activityKey;
+    sessionTimestampsRef.current = {
+      createdAt: sessionTimestampsRef.current?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
 
     if (remoteSaveTimeoutRef.current) {
       clearTimeout(remoteSaveTimeoutRef.current);
@@ -1194,9 +1252,22 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     remoteSaveTimeoutRef.current = setTimeout(() => {
-      void saveRemoteLearnSession(sessionId, snapshot)
+      void saveRemoteLearnSession(sessionId, snapshot, {
+        cacheKey: authSession.user.id,
+      })
         .then((persistedSession) => {
-          writeLearnSessionSnapshot(sessionId, persistedSession.snapshot);
+          sessionTimestampsRef.current = {
+            createdAt: persistedSession.createdAt,
+            updatedAt: persistedSession.updatedAt,
+          };
+          lastCachedSnapshotKeyRef.current = serializeLearnSessionSnapshot(persistedSession.snapshot);
+          lastTrackedActivityKeyRef.current = serializeLearnSessionActivity(persistedSession.snapshot);
+
+          writeLearnSessionSnapshot(sessionId, persistedSession.snapshot, {
+            createdAt: persistedSession.createdAt,
+            updatedAt: persistedSession.updatedAt,
+            notifyHistoryUpdate: false,
+          });
           const nextCourse = persistedSession.snapshot.course ?? null;
           const currentCourse = courseRef.current;
           const currentCourseKey = currentCourse
@@ -1336,7 +1407,9 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
     if (authSession?.user?.id) {
       try {
-        remoteEntries = await loadRemoteLearnSessionSummaries();
+        remoteEntries = await loadRemoteLearnSessionSummaries({
+          cacheKey: authSession.user.id,
+        });
       } catch (error) {
         nextError = error instanceof Error ? error.message : "Failed to load saved learn sessions.";
       }
