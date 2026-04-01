@@ -13,6 +13,7 @@ import { listLocalLearnSessionSummaries } from "../lib/learn-session";
 import { loadProfile } from "../lib/profile-api";
 import { authClient } from "../lib/auth-client";
 import { COURSE_LIBRARY_UPDATED_EVENT, LOCAL_SESSION_HISTORY_UPDATED_EVENT } from "../lib/app-shell-events";
+import { buildProfileHref } from "../lib/profile-route";
 import { AuthDock } from "./AuthDock";
 import { Icon } from "./TutorUi";
 
@@ -29,6 +30,10 @@ function getSessionUsername(session: ReturnType<typeof authClient.useSession>["d
   }
 
   return typeof session.user.username === "string" ? session.user.username : "";
+}
+
+function getAvatarLabel(username: string) {
+  return username.trim().charAt(0).toUpperCase() || "?";
 }
 
 function compareIsoDatesDesc(left: string, right: string) {
@@ -79,12 +84,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [coursesError, setCoursesError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [isSignOutMenuOpen, setIsSignOutMenuOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const sessionUsername = getSessionUsername(authSession);
+  const profileHref = sessionUsername ? buildProfileHref(sessionUsername) : "";
   const remoteHistoryRef = useRef<LearnSessionSummary[]>([]);
   const hasInitializedDrawerRef = useRef(false);
   const authUserIdRef = useRef<string | null>(authSession?.user?.id ?? null);
   const sessionUsernameRef = useRef(sessionUsername);
+  const signOutMenuRef = useRef<HTMLDivElement | null>(null);
 
   authUserIdRef.current = authSession?.user?.id ?? null;
   sessionUsernameRef.current = sessionUsername;
@@ -209,12 +218,31 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isSignOutMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!signOutMenuRef.current?.contains(event.target as Node)) {
+        setIsSignOutMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isSignOutMenuOpen]);
+
   const drawerOffset = isDesktop
     ? isDrawerOpen
       ? DESKTOP_CONTENT_OFFSET
       : DESKTOP_RAIL_OFFSET
     : MOBILE_CONTENT_OFFSET;
   const isHomePage = pathname === "/";
+  const isProfilePage = Boolean(profileHref) && pathname === profileHref;
 
   function closeDrawerIfNeeded() {
     if (!isDesktop) {
@@ -278,6 +306,22 @@ export function AppShell({ children }: { children: ReactNode }) {
     });
 
     return pathname === learnHref || pathname.startsWith(`${learnHref}/quiz`);
+  }
+
+  async function handleSignOut() {
+    setIsSigningOut(true);
+
+    try {
+      const result = await authClient.signOut();
+      if (result.error) {
+        return;
+      }
+
+      setIsSignOutMenuOpen(false);
+      closeDrawerIfNeeded();
+    } finally {
+      setIsSigningOut(false);
+    }
   }
 
   return (
@@ -413,6 +457,56 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               </section>
             </div>
+
+            {sessionUsername ? (
+              <div style={styles.drawerFooter}>
+                <div
+                  ref={signOutMenuRef}
+                  style={{
+                    ...styles.profileLink,
+                    ...(isProfilePage ? styles.profileLinkActive : null),
+                  }}
+                >
+                  <Link
+                    href={profileHref}
+                    onClick={() => {
+                      closeDrawerIfNeeded();
+                    }}
+                    style={styles.profileIdentity}
+                    aria-label={`${sessionUsername} profile`}
+                    aria-current={isProfilePage ? "page" : undefined}
+                  >
+                    <span style={styles.profileAvatar}>{getAvatarLabel(sessionUsername)}</span>
+                    <span style={styles.profileUsername}>@{sessionUsername}</span>
+                  </Link>
+
+                  <div style={styles.profileActions}>
+                    <button
+                      type="button"
+                      onClick={() => setIsSignOutMenuOpen((current) => !current)}
+                      style={styles.profileActionButton}
+                      aria-label="Open sign out menu"
+                      aria-expanded={isSignOutMenuOpen}
+                    >
+                      <Icon name="logOut" size={17} />
+                    </button>
+
+                    {isSignOutMenuOpen ? (
+                      <div style={styles.signOutMenu}>
+                        <button
+                          type="button"
+                          onClick={() => void handleSignOut()}
+                          style={styles.signOutMenuButton}
+                          disabled={isSigningOut}
+                        >
+                          {isSigningOut ? "Signing out..." : "Sign out"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </>
         ) : (
           <div style={styles.drawerRail}>
@@ -424,6 +518,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <Icon name="menu" size={20} />
             </button>
+
+            {sessionUsername ? (
+              <Link
+                href={profileHref}
+                onClick={() => {
+                  closeDrawerIfNeeded();
+                }}
+                style={{
+                  ...styles.profileRailLink,
+                  ...(isProfilePage ? styles.profileRailLinkActive : null),
+                }}
+                aria-label={`${sessionUsername} profile`}
+                aria-current={isProfilePage ? "page" : undefined}
+              >
+                <span style={styles.profileAvatar}>{getAvatarLabel(sessionUsername)}</span>
+              </Link>
+            ) : null}
           </div>
         )}
       </aside>
@@ -474,14 +585,16 @@ const styles: Record<string, CSSProperties> = {
   },
   drawerClosed: {
     display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "center",
+    flexDirection: "column",
   },
   drawerRail: {
     width: "100%",
-    padding: "14px 10px",
+    flex: 1,
+    padding: "14px 10px 16px",
     display: "flex",
-    justifyContent: "center",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   drawerHeader: {
     padding: "14px 14px 10px",
@@ -498,9 +611,8 @@ const styles: Record<string, CSSProperties> = {
     textDecoration: "none",
   },
   brandIcon: {
-    width: "36px",
-    height: "36px",
-    borderRadius: "10px",
+    width: "50px",
+    height: "auto",
   },
   drawerBody: {
     flex: 1,
@@ -510,6 +622,10 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: "14px",
+  },
+  drawerFooter: {
+    padding: "12px 10px 16px",
+    borderTop: "1px solid rgba(94, 73, 61, 0.1)",
   },
   toggleButton: {
     width: "36px",
@@ -659,5 +775,101 @@ const styles: Record<string, CSSProperties> = {
     color: "#a22e2e",
     fontSize: "0.8rem",
     lineHeight: 1.45,
+  },
+  profileLink: {
+    width: "100%",
+    borderRadius: "16px",
+    border: "1px solid transparent",
+    background: "rgba(255, 255, 255, 0.58)",
+    padding: "10px 12px",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+  },
+  profileLinkActive: {
+    borderColor: "rgba(138, 55, 21, 0.14)",
+    background: "rgba(255, 244, 234, 0.94)",
+  },
+  profileRailLink: {
+    textDecoration: "none",
+    borderRadius: "999px",
+    border: "1px solid transparent",
+    padding: "2px",
+  },
+  profileRailLinkActive: {
+    borderColor: "rgba(138, 55, 21, 0.2)",
+    background: "rgba(255, 244, 234, 0.9)",
+  },
+  profileAvatar: {
+    width: "38px",
+    height: "38px",
+    borderRadius: "999px",
+    border: "1px solid rgba(94, 73, 61, 0.16)",
+    background: "#5e493d",
+    color: "#fff7f2",
+    display: "grid",
+    placeItems: "center",
+    fontSize: "0.92rem",
+    fontWeight: 700,
+    letterSpacing: "0.01em",
+    flexShrink: 0,
+  },
+  profileIdentity: {
+    minWidth: 0,
+    flex: 1,
+    color: "var(--text)",
+    textDecoration: "none",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+  },
+  profileUsername: {
+    minWidth: 0,
+    fontSize: "0.92rem",
+    fontWeight: 600,
+    lineHeight: 1.3,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  profileActions: {
+    position: "relative",
+    flexShrink: 0,
+  },
+  profileActionButton: {
+    width: "34px",
+    height: "34px",
+    borderRadius: "10px",
+    border: "1px solid rgba(94, 73, 61, 0.12)",
+    background: "rgba(255, 255, 255, 0.9)",
+    color: "#5e493d",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+  },
+  signOutMenu: {
+    position: "absolute",
+    right: 0,
+    bottom: "calc(100% + 8px)",
+    minWidth: "116px",
+    padding: "6px",
+    borderRadius: "12px",
+    border: "1px solid rgba(94, 73, 61, 0.14)",
+    background: "rgba(255, 249, 243, 0.98)",
+    boxShadow: "0 16px 36px rgba(73, 35, 14, 0.16)",
+    backdropFilter: "blur(18px)",
+  },
+  signOutMenuButton: {
+    width: "100%",
+    border: 0,
+    borderRadius: "8px",
+    background: "transparent",
+    color: "#8a3715",
+    padding: "8px 10px",
+    textAlign: "left",
+    fontSize: "0.88rem",
+    fontWeight: 600,
+    cursor: "pointer",
   },
 };

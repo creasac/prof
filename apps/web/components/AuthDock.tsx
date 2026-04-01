@@ -1,10 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useState, type CSSProperties, type FormEvent } from "react";
 
 import { authClient } from "../lib/auth-client";
-import { buildProfileHref } from "../lib/profile-route";
 
 function getSessionUsername(session: ReturnType<typeof authClient.useSession>["data"]) {
   if (!session?.user || !("username" in session.user)) {
@@ -12,10 +10,6 @@ function getSessionUsername(session: ReturnType<typeof authClient.useSession>["d
   }
 
   return typeof session.user.username === "string" ? session.user.username : "";
-}
-
-function getAvatarLabel(username: string) {
-  return username.trim().charAt(0).toUpperCase() || "?";
 }
 
 export function AuthDock() {
@@ -117,18 +111,7 @@ export function AuthDock() {
   }
 
   if (session?.user && sessionUsername) {
-    return (
-      <aside style={{ ...styles.shell, width: "auto" }}>
-        <div style={{ ...styles.card, ...styles.accountCard }}>
-          <Link href={buildProfileHref(sessionUsername)} style={styles.avatarLink} aria-label={`${sessionUsername} profile`}>
-            {getAvatarLabel(sessionUsername)}
-          </Link>
-          <button type="button" style={styles.ghostButton} onClick={() => void handleSignOut()} disabled={isSubmitting}>
-            {isSubmitting ? "..." : "Sign out"}
-          </button>
-        </div>
-      </aside>
-    );
+    return null;
   }
 
   return (
@@ -246,12 +229,6 @@ const styles: Record<string, CSSProperties> = {
     flexDirection: "column",
     gap: "10px",
   },
-  accountCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px",
-  },
   headerRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -324,20 +301,6 @@ const styles: Record<string, CSSProperties> = {
     color: "#5e493d",
     padding: "7px 10px",
     cursor: "pointer",
-  },
-  avatarLink: {
-    width: "38px",
-    height: "38px",
-    borderRadius: "999px",
-    border: "1px solid rgba(94, 73, 61, 0.16)",
-    background: "#5e493d",
-    color: "#fff7f2",
-    textDecoration: "none",
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 700,
-    fontSize: "0.92rem",
-    letterSpacing: "0.01em",
   },
   errorText: {
     margin: 0,

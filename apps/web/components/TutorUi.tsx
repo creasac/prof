@@ -17,6 +17,7 @@ export type IconName =
   | "check"
   | "file"
   | "live"
+  | "logOut"
   | "menu"
   | "message"
   | "mic"
@@ -94,6 +95,14 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
           <path d="M8.3 10.2a4.7 4.7 0 0 0 0 3.6" />
           <path d="M15.7 10.2a4.7 4.7 0 0 1 0 3.6" />
           <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case "logOut":
+      return (
+        <svg {...svgProps}>
+          <path d="M10 4.5H7.8A2.3 2.3 0 0 0 5.5 6.8v10.4a2.3 2.3 0 0 0 2.3 2.3H10" />
+          <path d="M13 8.2 17.5 12 13 15.8" />
+          <path d="M9.5 12h8" />
         </svg>
       );
     case "menu":
