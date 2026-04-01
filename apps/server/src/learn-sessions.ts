@@ -1,5 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
+  createLearnSessionSummary,
   learnSessionSnapshotSchema,
   persistedLearnSessionSchema,
   type LearnSessionSnapshot,
@@ -30,6 +31,17 @@ function toPersistedLearnSession(record: typeof learnSession.$inferSelect) {
   });
 }
 
+function toLearnSessionSummary(record: typeof learnSession.$inferSelect) {
+  const snapshot = normalizeLearnSessionSnapshot(record.snapshot);
+
+  return createLearnSessionSummary({
+    sessionId: record.id,
+    snapshot,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+  });
+}
+
 export async function readLearnSessionForUser(userId: string, sessionId: string) {
   const [record] = await requireDb()
     .select()
@@ -38,6 +50,17 @@ export async function readLearnSessionForUser(userId: string, sessionId: string)
     .limit(1);
 
   return record ? toPersistedLearnSession(record) : null;
+}
+
+export async function listLearnSessionsForUser(userId: string, limit = 40) {
+  const records = await requireDb()
+    .select()
+    .from(learnSession)
+    .where(eq(learnSession.userId, userId))
+    .orderBy(desc(learnSession.updatedAt))
+    .limit(limit);
+
+  return records.map(toLearnSessionSummary);
 }
 
 export async function saveLearnSessionForUser(

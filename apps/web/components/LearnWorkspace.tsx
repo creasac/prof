@@ -11,7 +11,11 @@ import {
   type CoursePlan,
   type Flashcard,
   type GroundingSource,
+  type LearnSessionMessage,
+  type LearnSessionMessageChannel,
+  type LearnSessionMessageKind,
   type LearnSessionSnapshot,
+  type LearnSessionSummary,
   type LearnTopicArtifacts,
   type LessonBlock,
   type PlanRequestType,
@@ -26,11 +30,6 @@ import {
   type TutorBlock,
   type TutorBlockType,
 } from "@prof/contracts";
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
 import {
   useEffect,
   useRef,
@@ -45,8 +44,16 @@ import { authClient } from "../lib/auth-client";
 import { fetchApi } from "../lib/api";
 import { buildCourseHref } from "../lib/course-route";
 import { loadRemoteCourse } from "../lib/course-api";
-import { readLearnSessionSnapshot, writeLearnSessionSnapshot } from "../lib/learn-session";
-import { loadRemoteLearnSession, saveRemoteLearnSession } from "../lib/learn-session-api";
+import {
+  listLocalLearnSessionSummaries,
+  readLearnSessionSnapshot,
+  writeLearnSessionSnapshot,
+} from "../lib/learn-session";
+import {
+  loadRemoteLearnSession,
+  loadRemoteLearnSessionSummaries,
+  saveRemoteLearnSession,
+} from "../lib/learn-session-api";
 import { buildLearnHref, buildLearnQuizHref, createLearnSessionId, parseLearnRouteState } from "../lib/learn-route";
 import {
   attachUrlMaterial,
@@ -64,6 +71,9 @@ import { PlannerView } from "./PlannerUi";
 import { PromptComposer } from "./PromptComposer";
 import { SourceMaterialsPanel } from "./SourceMaterialsPanel";
 import { BlockView, Icon, IconText } from "./TutorUi";
+
+type ChatMessage = LearnSessionMessage;
+type SessionHistoryEntry = LearnSessionSummary;
 
 const DESKTOP_MEDIA_QUERY = "(min-width: 960px)";
 const DEFAULT_LEFT_PANE_PERCENT = 56;
@@ -334,6 +344,110 @@ function buildLiveContextDigest(options: {
   }
 
   return truncateText(toSingleLine(lines.join(" ")), LIVE_CONTEXT_MAX_CHARS);
+}
+
+function createSessionMessageId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function inferMessageKind(message: Pick<ChatMessage, "content" | "kind">, channel: LearnSessionMessageChannel) {
+  if (message.kind) {
+    return message.kind;
+  }
+
+  if (channel === "live" && message.content.startsWith(LIVE_STATUS_PREFIX)) {
+    return "status" as const;
+  }
+
+  return "message" as const;
+}
+
+function ensureSessionMessage(
+  message: ChatMessage,
+  channel: LearnSessionMessageChannel,
+  fallbackCreatedAt?: string,
+): ChatMessage {
+  return {
+    id: message.id ?? createSessionMessageId(),
+    role: message.role,
+    content: message.content,
+    createdAt: message.createdAt ?? fallbackCreatedAt ?? new Date().toISOString(),
+    channel: message.channel ?? channel,
+    kind: inferMessageKind(message, message.channel ?? channel),
+    sources: message.sources ?? [],
+    requestType: message.requestType,
+    updateTarget: message.updateTarget,
+    responseType: message.responseType,
+    targetPanel: message.targetPanel,
+    topicId: message.topicId ?? null,
+  };
+}
+
+function createSessionMessage(options: {
+  role: ChatMessage["role"];
+  content: string;
+  channel: LearnSessionMessageChannel;
+  kind?: LearnSessionMessageKind;
+  createdAt?: string;
+  sources?: GroundingSource[];
+  requestType?: ReasoningRequestType;
+  updateTarget?: ReasoningUpdateTarget;
+  responseType?: ReasoningChatResponse["responseType"];
+  targetPanel?: ReasoningChatResponse["targetPanel"];
+  topicId?: string | null;
+}): ChatMessage {
+  return ensureSessionMessage(
+    {
+      role: options.role,
+      content: options.content,
+      channel: options.channel,
+      kind: options.kind,
+      createdAt: options.createdAt,
+      sources: options.sources ?? [],
+      requestType: options.requestType,
+      updateTarget: options.updateTarget,
+      responseType: options.responseType,
+      targetPanel: options.targetPanel,
+      topicId: options.topicId ?? null,
+    },
+    options.channel,
+    options.createdAt,
+  );
+}
+
+function compareIsoDatesDesc(left: string, right: string) {
+  return Date.parse(right) - Date.parse(left);
+}
+
+function mergeSessionHistory(entries: SessionHistoryEntry[]) {
+  const merged = new Map<string, SessionHistoryEntry>();
+
+  for (const entry of entries) {
+    const current = merged.get(entry.sessionId);
+    if (!current || compareIsoDatesDesc(current.updatedAt, entry.updatedAt) > 0) {
+      merged.set(entry.sessionId, entry);
+    }
+  }
+
+  return Array.from(merged.values()).sort((left, right) => compareIsoDatesDesc(left.updatedAt, right.updatedAt));
+}
+
+function formatHistoryTimestamp(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 function isLightweightAcknowledgement(message: string) {
@@ -638,6 +752,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
   const [liveInputDraft, setLiveInputDraft] = useState("");
   const [liveOutputDraft, setLiveOutputDraft] = useState("");
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [sessionHistory, setSessionHistory] = useState<SessionHistoryEntry[]>([]);
   const [isMicActive, setIsMicActive] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [leftPanePercent, setLeftPanePercent] = useState(DEFAULT_LEFT_PANE_PERCENT);
@@ -682,6 +800,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const workspaceRef = useRef<HTMLElement | null>(null);
   const chatBodyRef = useRef<HTMLDivElement | null>(null);
   const chatAutoScrollLockedRef = useRef(false);
+  const historyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const historyPanelRef = useRef<HTMLDivElement | null>(null);
   const planningAbortRef = useRef<AbortController | null>(null);
   const splitterPointerIdRef = useRef<number | null>(null);
   const generatedSectionRef = useRef<HTMLElement | null>(null);
@@ -890,8 +1010,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         setIsGeneratingQuiz(false);
         companionQuizRequestRef.current = null;
         setBlockSources(snapshot.blockSources);
-        setChatMessages(snapshot.chatMessages ?? []);
-        const storedLiveMessages = snapshot.liveMessages ?? [];
+        setChatMessages((snapshot.chatMessages ?? []).map((message) => ensureSessionMessage(message, "chat")));
+        const storedLiveMessages = (snapshot.liveMessages ?? []).map((message) => ensureSessionMessage(message, "live"));
         setLiveMessages(storedLiveMessages);
         lastLiveUserMessageRef.current =
           [...storedLiveMessages].reverse().find((message) => message.role === "user")?.content ?? null;
@@ -1127,6 +1247,51 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   ]);
 
   useEffect(() => {
+    if (!isHistoryOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (historyPanelRef.current?.contains(target) || historyButtonRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsHistoryOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsHistoryOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isHistoryOpen]);
+
+  useEffect(() => {
+    setIsHistoryOpen(false);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!isHistoryOpen) {
+      return;
+    }
+
+    void loadSessionHistory();
+  }, [authSession?.user?.id, isAuthPending, isHistoryOpen]);
+
+  useEffect(() => {
     if (chatAutoScrollLockedRef.current) {
       return;
     }
@@ -1142,6 +1307,52 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       }
     });
   }, [chatMessages, liveMessages, liveInputDraft, liveOutputDraft, liveError, goal]);
+
+  async function loadSessionHistory() {
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+
+    const localEntries = listLocalLearnSessionSummaries();
+    let remoteEntries: SessionHistoryEntry[] = [];
+    let nextError: string | null = null;
+
+    if (authSession?.user?.id) {
+      try {
+        remoteEntries = await loadRemoteLearnSessionSummaries();
+      } catch (error) {
+        nextError = error instanceof Error ? error.message : "Failed to load saved learn sessions.";
+      }
+    }
+
+    setSessionHistory(mergeSessionHistory([...remoteEntries, ...localEntries]));
+    setHistoryError(nextError);
+    setIsHistoryLoading(false);
+  }
+
+  function handleHistoryToggle() {
+    setIsHistoryOpen((current) => !current);
+  }
+
+  function handleHistorySelect(entry: SessionHistoryEntry) {
+    setIsHistoryOpen(false);
+
+    if (entry.sessionId === sessionId) {
+      return;
+    }
+
+    router.push(
+      buildLearnHref({
+        sessionId: entry.sessionId,
+        courseOwnerUsername: null,
+        courseSlug: null,
+        goal: "",
+        preferredBlockType: "",
+        useWebSearch: false,
+        autoStartAction: null,
+      }),
+      { scroll: false },
+    );
+  }
 
   useEffect(() => {
     if (!isSessionHydrated || isGeneratingTopic || isGeneratingQuiz) {
@@ -1575,13 +1786,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }
 
   async function submitChatRequest(input: string) {
-    if (!input.trim()) {
+    const trimmedInput = input.trim();
+    if (!trimmedInput) {
       return;
     }
-
-    setChatMessages((prev) => [...prev, { role: "user", content: input }]);
-    setPlannerInput("");
-    setPlannerError(null);
 
     const currentArtifacts = collectCurrentArtifacts(generatedBlock, generatedQuiz);
     const currentTopic = resolveCurrentTopic(plan);
@@ -1596,16 +1804,28 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const shouldApplyLearnUpdates = requestType !== "general_query";
     const preferredType = intent?.preferredBlockType ?? (preferredBlockType || undefined);
     const currentTopicId = currentTopic?.id ?? selectedTopicId ?? generatedTopicId;
+    const userMessage = createSessionMessage({
+      role: "user",
+      content: trimmedInput,
+      channel: "chat",
+      requestType,
+      updateTarget: intent?.updateTarget,
+      topicId: currentTopicId ?? null,
+    });
+
+    setChatMessages((prev) => [...prev, userMessage]);
+    setPlannerInput("");
+    setPlannerError(null);
 
     try {
-      const requestSourceMaterials = await ensureUrlMaterialsAttached(input);
+      const requestSourceMaterials = await ensureUrlMaterialsAttached(trimmedInput);
       const response = await fetchApi("/api/reasoning/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          message: input,
+          message: trimmedInput,
           requestType,
           updateTarget: intent?.updateTarget,
           preferredBlockType: preferredType,
@@ -1623,14 +1843,25 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         throw new Error(body.error ?? "Chat request failed.");
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as ReasoningChatResponse;
 
       if (data.content) {
-        setChatMessages((prev) => [...prev, { role: "assistant", content: data.content }]);
+        setChatMessages((prev) => [
+          ...prev,
+          createSessionMessage({
+            role: "assistant",
+            content: data.content,
+            channel: "chat",
+            sources: data.sources ?? [],
+            responseType: data.responseType,
+            targetPanel: data.targetPanel,
+            topicId: currentTopicId ?? null,
+          }),
+        ]);
       }
 
       if (shouldApplyLearnUpdates && (data.artifact || data.plan)) {
-        seedLearnGoal(input);
+        seedLearnGoal(trimmedInput);
       }
 
       if (shouldApplyLearnUpdates && data.targetPanel === "learn" && data.artifact) {
@@ -1984,7 +2215,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }
 
   function isLiveStatusMessage(message: ChatMessage) {
-    return message.role === "assistant" && message.content.startsWith(LIVE_STATUS_PREFIX);
+    return (
+      message.role === "assistant" &&
+      (message.kind === "status" || message.content.startsWith(LIVE_STATUS_PREFIX))
+    );
   }
 
   function getLiveChatHistory(limit = 20) {
@@ -2005,7 +2239,15 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     lastLiveStatusRef.current = { text, at: now };
-    setLiveMessages((prev) => [...prev, { role: "assistant", content: text }]);
+    setLiveMessages((prev) => [
+      ...prev,
+      createSessionMessage({
+        role: "assistant",
+        content: text,
+        channel: "live",
+        kind: "status",
+      }),
+    ]);
   }
 
   function derivePreferredBlockType(message: string): TutorBlockType | undefined {
@@ -2213,10 +2455,21 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       throw new Error(body.error ?? "Reasoning request failed.");
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as ReasoningChatResponse;
 
     if (data.content && options.appendToLiveMessages) {
-      setLiveMessages((prev) => [...prev, { role: "assistant", content: data.content }]);
+      setLiveMessages((prev) => [
+        ...prev,
+        createSessionMessage({
+          role: "assistant",
+          content: data.content,
+          channel: "live",
+          sources: data.sources ?? [],
+          responseType: data.responseType,
+          targetPanel: data.targetPanel,
+          topicId: currentTopicId,
+        }),
+      ]);
     }
 
     const shouldTargetLearn = data.targetPanel === "learn" || data.responseType !== "chat";
@@ -2317,7 +2570,14 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     lastLiveUserMessageRef.current = trimmed;
-    setLiveMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+    setLiveMessages((prev) => [
+      ...prev,
+      createSessionMessage({
+        role: "user",
+        content: trimmed,
+        channel: "live",
+      }),
+    ]);
 
     session.sendUserMessage(trimmed);
   }
@@ -2329,7 +2589,14 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     lastLiveUserMessageRef.current = draft;
-    setLiveMessages((prev) => [...prev, { role: "user", content: draft }]);
+    setLiveMessages((prev) => [
+      ...prev,
+      createSessionMessage({
+        role: "user",
+        content: draft,
+        channel: "live",
+      }),
+    ]);
     liveInputDraftRef.current = "";
     setLiveInputDraft("");
   }
@@ -2347,7 +2614,14 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       return;
     }
 
-    setLiveMessages((prev) => [...prev, { role: "assistant", content: draft }]);
+    setLiveMessages((prev) => [
+      ...prev,
+      createSessionMessage({
+        role: "assistant",
+        content: draft,
+        channel: "live",
+      }),
+    ]);
     liveOutputDraftRef.current = "";
     setLiveOutputDraft("");
   }
@@ -3308,6 +3582,65 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           <div style={styles.panelHeader}>
             <h2 style={styles.sectionTitle}>Chat</h2>
             <div style={styles.panelHeaderActions}>
+              <div style={styles.historyMenuWrap}>
+                <button
+                  ref={historyButtonRef}
+                  type="button"
+                  style={{
+                    ...styles.historyButton,
+                    ...(isHistoryOpen ? styles.historyButtonActive : null),
+                  }}
+                  onClick={handleHistoryToggle}
+                  aria-expanded={isHistoryOpen}
+                  aria-haspopup="dialog"
+                >
+                  <IconText icon="stack" size={14}>
+                    History
+                  </IconText>
+                </button>
+
+                {isHistoryOpen ? (
+                  <div ref={historyPanelRef} style={styles.historyMenu}>
+                    <div style={styles.historyMenuHeader}>
+                      <p style={styles.historyMenuTitle}>Recent sessions</p>
+                      <span style={styles.historyMenuMeta}>{sessionHistory.length}</span>
+                    </div>
+
+                    {historyError ? <p style={styles.historyMenuError}>{historyError}</p> : null}
+
+                    {isHistoryLoading ? (
+                      <p style={styles.historyMenuEmpty}>Loading sessions...</p>
+                    ) : sessionHistory.length === 0 ? (
+                      <p style={styles.historyMenuEmpty}>Start a chat and it will appear here.</p>
+                    ) : (
+                      <div style={styles.historyMenuList}>
+                        {sessionHistory.map((entry) => (
+                          <button
+                            key={entry.sessionId}
+                            type="button"
+                            onClick={() => handleHistorySelect(entry)}
+                            style={{
+                              ...styles.historyItem,
+                              ...(entry.sessionId === sessionId ? styles.historyItemActive : null),
+                            }}
+                          >
+                            <div style={styles.historyItemTopRow}>
+                              <p style={styles.historyItemTitle}>{entry.title}</p>
+                              <span style={styles.historyItemTime}>{formatHistoryTimestamp(entry.updatedAt)}</span>
+                            </div>
+                            <p style={styles.historyItemPreview}>{entry.preview}</p>
+                            <div style={styles.historyItemMetaRow}>
+                              <span>{entry.messageCount} msgs</span>
+                              {entry.sessionId === sessionId ? <span>Current</span> : null}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+
               <span style={styles.badge}>
                 <IconText icon={getLiveStatusIcon(liveStatus)} size={14}>
                   {getLiveStatusLabel(liveStatus)}
@@ -3327,7 +3660,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
             {chatMessages.map((msg, idx) => (
               <div
-                key={idx}
+                key={msg.id ?? `chat-${idx}`}
                 style={{
                   ...styles.messageBubble,
                   ...(msg.role === "user" ? styles.userBubble : styles.assistantBubble),
@@ -3339,7 +3672,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
             {liveMessages.map((msg, idx) => (
               <div
-                key={`live-${idx}`}
+                key={msg.id ?? `live-${idx}`}
                 style={{
                   ...styles.messageBubble,
                   ...(msg.role === "user" ? styles.userBubble : styles.assistantBubble),
@@ -3734,6 +4067,133 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: "flex-end",
     gap: "8px",
     flexWrap: "wrap",
+  },
+  historyMenuWrap: {
+    position: "relative",
+    display: "flex",
+    alignItems: "center",
+  },
+  historyButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "6px 10px",
+    borderRadius: "999px",
+    border: "1px solid rgba(72, 42, 22, 0.08)",
+    background: "rgba(255, 251, 246, 0.82)",
+    color: "#734731",
+    cursor: "pointer",
+    font: "inherit",
+    whiteSpace: "nowrap",
+    boxShadow: "0 8px 18px rgba(73, 35, 14, 0.05)",
+  },
+  historyButtonActive: {
+    background: "rgba(255, 244, 234, 0.96)",
+    borderColor: "rgba(191, 91, 44, 0.18)",
+    color: "#8a3715",
+  },
+  historyMenu: {
+    position: "absolute",
+    top: "calc(100% + 10px)",
+    right: 0,
+    zIndex: 20,
+    width: "min(360px, 78vw)",
+    maxHeight: "420px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+    padding: "12px",
+    borderRadius: "18px",
+    border: "1px solid rgba(72, 42, 22, 0.08)",
+    background: "rgba(255, 252, 248, 0.98)",
+    boxShadow: "0 18px 40px rgba(73, 35, 14, 0.14)",
+    backdropFilter: "blur(18px)",
+  },
+  historyMenuHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+  },
+  historyMenuTitle: {
+    margin: 0,
+    fontSize: "0.86rem",
+    fontWeight: 600,
+    color: "#4d3427",
+  },
+  historyMenuMeta: {
+    fontSize: "0.75rem",
+    color: "#7e6558",
+  },
+  historyMenuList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    minHeight: 0,
+    overflowY: "auto",
+    paddingRight: "2px",
+  },
+  historyMenuEmpty: {
+    margin: 0,
+    color: "#7e6558",
+    fontSize: "0.82rem",
+    lineHeight: 1.5,
+  },
+  historyMenuError: {
+    margin: 0,
+    color: "#b3431f",
+    fontSize: "0.78rem",
+    lineHeight: 1.45,
+  },
+  historyItem: {
+    width: "100%",
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    padding: "10px 12px",
+    borderRadius: "14px",
+    border: "1px solid rgba(72, 42, 22, 0.08)",
+    background: "rgba(255, 255, 255, 0.82)",
+    textAlign: "left",
+    cursor: "pointer",
+    font: "inherit",
+    color: "#4d3427",
+  },
+  historyItemActive: {
+    borderColor: "rgba(191, 91, 44, 0.22)",
+    background: "rgba(255, 244, 234, 0.9)",
+  },
+  historyItemTopRow: {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: "12px",
+  },
+  historyItemTitle: {
+    margin: 0,
+    fontSize: "0.84rem",
+    fontWeight: 600,
+    lineHeight: 1.35,
+    color: "#3d2a21",
+  },
+  historyItemTime: {
+    flexShrink: 0,
+    fontSize: "0.72rem",
+    color: "#8a6a57",
+  },
+  historyItemPreview: {
+    margin: 0,
+    fontSize: "0.79rem",
+    color: "#6b5447",
+    lineHeight: 1.45,
+  },
+  historyItemMetaRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    fontSize: "0.71rem",
+    color: "#8a6a57",
   },
   badge: {
     padding: "5px 8px",

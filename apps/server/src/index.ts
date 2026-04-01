@@ -9,6 +9,7 @@ import {
   lessonQuizRequestSchema,
   lessonQuizResponseSchema,
   learnSessionSnapshotSchema,
+  learnSessionSummaryListSchema,
   plannedTopicBlockRequestSchema,
   plannedTopicBlockResponseSchema,
   sourceMaterialResponseSchema,
@@ -45,6 +46,7 @@ import {
   updateCourseVisibilityForOwner,
 } from "./courses.js";
 import {
+  listLearnSessionsForUser,
   readLearnSessionForUser,
   saveLearnSessionForUser,
 } from "./learn-sessions.js";
@@ -137,6 +139,20 @@ app.get("/api/config", (_req, res) => {
       },
     }),
   );
+});
+
+app.get("/api/learn/sessions", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const sessions = await listLearnSessionsForUser(authSession.user.id);
+    res.json(learnSessionSummaryListSchema.parse(sessions));
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/learn/sessions/:sessionId", async (req, res, next) => {

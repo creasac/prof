@@ -172,9 +172,42 @@ export const sourceMaterialSchema = z.object({
   textExcerpt: z.string().max(20000).optional().default(""),
 });
 
+const learnSessionMessageChannelValues = ["chat", "live"] as const;
+const learnSessionMessageKindValues = ["message", "status"] as const;
+const reasoningResponseTypeValues = ["chat", "artifact_create", "artifact_update"] as const;
+const reasoningRequestTypeValues = ["new_content", "update_content", "general_query"] as const;
+const reasoningUpdateTargetValues = [
+  "lesson",
+  "topic_list",
+  "topic",
+  "quiz",
+  "flashcards",
+  "plan",
+  "all",
+  "unknown",
+] as const;
+const targetPanelValues = ["chat", "learn"] as const;
+
+export const learnSessionMessageChannelSchema = z.enum(learnSessionMessageChannelValues);
+export const learnSessionMessageKindSchema = z.enum(learnSessionMessageKindValues);
+export const reasoningResponseTypeSchema = z.enum(reasoningResponseTypeValues);
+export const reasoningRequestTypeSchema = z.enum(reasoningRequestTypeValues);
+export const reasoningUpdateTargetSchema = z.enum(reasoningUpdateTargetValues);
+export const targetPanelSchema = z.enum(targetPanelValues);
+
 export const learnSessionMessageSchema = z.object({
+  id: z.string().min(1).max(120).optional(),
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1),
+  createdAt: z.string().optional(),
+  channel: learnSessionMessageChannelSchema.optional(),
+  kind: learnSessionMessageKindSchema.optional(),
+  sources: z.array(groundingSourceSchema).optional().default([]),
+  requestType: reasoningRequestTypeSchema.optional(),
+  updateTarget: reasoningUpdateTargetSchema.optional(),
+  responseType: reasoningResponseTypeSchema.optional(),
+  targetPanel: targetPanelSchema.optional(),
+  topicId: z.string().nullable().optional().default(null),
 });
 
 export const quizAnswerStateSchema = z.object({
@@ -256,6 +289,19 @@ export const persistedLearnSessionSchema = z.object({
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),
 });
+
+export const learnSessionSummarySchema = z.object({
+  sessionId: z.string().min(1),
+  courseId: z.string().nullable().default(null),
+  title: z.string().min(1).max(140),
+  preview: z.string().max(320),
+  goal: z.string(),
+  messageCount: z.number().int().min(0),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+});
+
+export const learnSessionSummaryListSchema = z.array(learnSessionSummarySchema);
 
 export const courseSummarySchema = z.object({
   courseId: z.string().min(1),
@@ -588,11 +634,14 @@ export type CourseSummary = z.infer<typeof courseSummarySchema>;
 export type PersistedCourse = z.infer<typeof persistedCourseSchema>;
 export type CourseVisibility = z.infer<typeof courseVisibilitySchema>;
 export type LearnSessionMessage = z.infer<typeof learnSessionMessageSchema>;
+export type LearnSessionMessageChannel = z.infer<typeof learnSessionMessageChannelSchema>;
+export type LearnSessionMessageKind = z.infer<typeof learnSessionMessageKindSchema>;
 export type LearnTopicArtifacts = z.infer<typeof learnTopicArtifactsSchema>;
 export type LearnSessionSnapshot = z.infer<typeof learnSessionSnapshotSchema>;
 export type LearnCourseSeed = z.infer<typeof learnCourseSeedSchema>;
 export type LearnCourseSummary = z.infer<typeof learnCourseSummarySchema>;
 export type PersistedLearnSession = z.infer<typeof persistedLearnSessionSchema>;
+export type LearnSessionSummary = z.infer<typeof learnSessionSummarySchema>;
 export type PrivateProfile = z.infer<typeof privateProfileSchema>;
 export type VoiceSessionResponse = z.infer<typeof voiceSessionResponseSchema>;
 export type CoursePlan = z.infer<typeof coursePlanSchema>;
@@ -616,21 +665,6 @@ export type ReasoningPlanRequest = z.infer<typeof reasoningPlanRequestSchema>;
 export type ReasoningPlanResponse = z.infer<typeof reasoningPlanResponseSchema>;
 export type ReasoningPlanStreamEvent = z.infer<typeof reasoningPlanStreamEventSchema>;
 export type ReasoningTopicBlockStreamEvent = z.infer<typeof reasoningTopicBlockStreamEventSchema>;
-export const reasoningResponseTypeSchema = z.enum(["chat", "artifact_create", "artifact_update"]);
-export const reasoningRequestTypeSchema = z.enum(["new_content", "update_content", "general_query"]);
-export const reasoningUpdateTargetSchema = z.enum([
-  "lesson",
-  "topic_list",
-  "topic",
-  "quiz",
-  "flashcards",
-  "plan",
-  "all",
-  "unknown",
-]);
-
-export const targetPanelSchema = z.enum(["chat", "learn"]);
-
 export const reasoningChatRequestSchema = z.object({
   message: z.string().min(1).max(2000),
   requestType: reasoningRequestTypeSchema.optional(),
@@ -702,4 +736,93 @@ export function createPublicId(length = 10) {
   }
 
   return value;
+}
+
+function normalizeSummaryText(value: string | null | undefined) {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function truncateSummaryText(value: string, maxChars: number) {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxChars - 1)).trim()}…`;
+}
+
+function isSummaryStatusMessage(message: LearnSessionMessage) {
+  return message.kind === "status" || normalizeSummaryText(message.content).startsWith("Status:");
+}
+
+function getSummaryConversationMessages(snapshot: LearnSessionSnapshot) {
+  return [...(snapshot.chatMessages ?? []), ...(snapshot.liveMessages ?? [])].filter((message) => {
+    const content = normalizeSummaryText(message.content);
+    return Boolean(content) && !isSummaryStatusMessage(message);
+  });
+}
+
+function getSummaryTimestampMs(value: string | undefined) {
+  if (!value) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY;
+}
+
+function getLatestSummaryMessage(snapshot: LearnSessionSnapshot) {
+  const messages = getSummaryConversationMessages(snapshot);
+
+  if (messages.length === 0) {
+    return null;
+  }
+
+  let latest = messages[messages.length - 1] ?? null;
+  let latestTimestamp = getSummaryTimestampMs(latest?.createdAt);
+
+  for (const message of messages) {
+    const timestamp = getSummaryTimestampMs(message.createdAt);
+    if (timestamp >= latestTimestamp) {
+      latest = message;
+      latestTimestamp = timestamp;
+    }
+  }
+
+  return latest;
+}
+
+export function createLearnSessionSummary(input: {
+  sessionId: string;
+  snapshot: LearnSessionSnapshot;
+  createdAt: string;
+  updatedAt: string;
+}) {
+  const goal = normalizeSummaryText(input.snapshot.goal);
+  const latestMessage = getLatestSummaryMessage(input.snapshot);
+  const latestText = latestMessage ? normalizeSummaryText(latestMessage.content) : "";
+  const title = truncateSummaryText(
+    normalizeSummaryText(input.snapshot.plan?.title) ||
+      normalizeSummaryText(input.snapshot.course?.title) ||
+      goal.split("\n")[0] ||
+      latestText ||
+      "Untitled session",
+    140,
+  );
+  const preview = truncateSummaryText(
+    latestMessage
+      ? `${latestMessage.role === "user" ? "You" : "Prof"}: ${latestText}`
+      : normalizeSummaryText(input.snapshot.plan?.summary) || goal || "No messages yet.",
+    320,
+  );
+
+  return learnSessionSummarySchema.parse({
+    sessionId: input.sessionId,
+    courseId: input.snapshot.course?.courseId ?? input.snapshot.courseId ?? null,
+    title,
+    preview,
+    goal,
+    messageCount: getSummaryConversationMessages(input.snapshot).length,
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
+  });
 }

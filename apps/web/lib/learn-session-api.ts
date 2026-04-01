@@ -1,7 +1,9 @@
 import {
   learnSessionSnapshotSchema,
+  learnSessionSummaryListSchema,
   persistedLearnSessionSchema,
   type LearnSessionSnapshot,
+  type LearnSessionSummary,
   type PersistedLearnSession,
 } from "@prof/contracts";
 
@@ -20,6 +22,17 @@ export async function loadRemoteLearnSession(sessionId: string): Promise<Persist
   }
 
   return persistedLearnSessionSchema.parse(await response.json());
+}
+
+export async function loadRemoteLearnSessionSummaries(): Promise<LearnSessionSummary[]> {
+  const response = await fetchApi("/api/learn/sessions");
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to load saved learn sessions.");
+  }
+
+  return learnSessionSummaryListSchema.parse(await response.json());
 }
 
 export async function saveRemoteLearnSession(sessionId: string, snapshot: LearnSessionSnapshot) {
