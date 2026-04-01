@@ -271,6 +271,8 @@ export function buildChatPrompt(input: ReasoningChatRequest) {
     "- Also provide a brief chat message in 'content' explaining what you're creating/updating",
     "- If the user hasn't specified a topic or the request is ambiguous, use 'follow_up_question' block type",
     "- If the user asks to update the topic list or plan, return the updated plan in the 'plan' field (targetPanel = 'learn')",
+    "- Any 'artifact' you include must be a complete tutor block object, not a partial draft or patch.",
+    "- Any 'plan' you include must be a complete plan object, not a partial diff.",
     "",
     "If a current plan exists, reference relevant topics when generating artifacts.",
     "If current artifacts are provided, treat them as the authoritative source when answering questions or updating content.",

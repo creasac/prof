@@ -481,11 +481,30 @@ function createCourseRef(input: {
   };
 }
 
+function normalizeGoalText(value: string | null | undefined) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function buildGoalFallback(plan: CoursePlan | null | undefined, course?: CourseRef | null) {
+  if (plan) {
+    const title = normalizeGoalText(plan.title);
+    const summary = normalizeGoalText(plan.summary);
+    return [title, summary].filter(Boolean).join("\n");
+  }
+
+  const courseTitle = normalizeGoalText(course?.title);
+  return courseTitle ? `Study ${courseTitle}` : "";
+}
+
+function resolveStoredGoalValue(rawGoal: string | null | undefined, plan: CoursePlan | null | undefined, course?: CourseRef | null) {
+  return normalizeGoalText(rawGoal) || buildGoalFallback(plan, course);
+}
+
 function createSeededSessionSnapshot(snapshot: CourseSnapshot, course: CourseRef): LearnSessionSnapshot {
   return {
     courseId: course.courseId,
     course,
-    goal: snapshot.goal,
+    goal: resolveStoredGoalValue(snapshot.goal, snapshot.plan, course),
     plannerInput: "",
     preferredBlockType: "",
     useWebSearch: false,
@@ -631,6 +650,13 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const planClarificationRef = useRef<PlanningClarification | null>(null);
   const configPromiseRef = useRef<Promise<AppConfig> | null>(null);
   const autoStartConsumedRef = useRef<string | null>(null);
+  const routeGoalSeedRef = useRef<{
+    sessionId: string | null;
+    goal: string;
+  }>({
+    sessionId: sessionId ?? null,
+    goal: normalizeGoalText(routeState.goal),
+  });
   const liveSessionRef = useRef<VoiceSessionHandle | null>(null);
   const microphoneRef = useRef<MicrophoneSession | null>(null);
   const liveInputDraftRef = useRef("");
@@ -707,6 +733,33 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   useEffect(() => {
     goalRef.current = goal;
   }, [goal]);
+
+  useEffect(() => {
+    const nextGoal = normalizeGoalText(routeState.goal);
+
+    if (sessionId && nextGoal) {
+      routeGoalSeedRef.current = {
+        sessionId,
+        goal: nextGoal,
+      };
+      return;
+    }
+
+    if (!sessionId) {
+      routeGoalSeedRef.current = {
+        sessionId: null,
+        goal: nextGoal,
+      };
+      return;
+    }
+
+    if (routeGoalSeedRef.current.sessionId !== sessionId) {
+      routeGoalSeedRef.current = {
+        sessionId,
+        goal: nextGoal,
+      };
+    }
+  }, [sessionId, routeState.goal]);
 
   useEffect(() => {
     selectedTopicIdRef.current = selectedTopicId;
@@ -803,9 +856,13 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         return;
       }
 
+      const routeGoalSeed =
+        normalizeGoalText(routeState.goal) ||
+        (routeGoalSeedRef.current.sessionId === sessionId ? routeGoalSeedRef.current.goal : "");
+
       if (snapshot) {
         setCourse(snapshot.course ?? null);
-        setGoal(snapshot.goal);
+        setGoal(resolveStoredGoalValue(snapshot.goal, snapshot.plan, snapshot.course ?? null));
         setPlannerInput(snapshot.plannerInput);
         setPreferredBlockType(snapshot.preferredBlockType);
         setUseWebSearch(snapshot.useWebSearch);
@@ -845,8 +902,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         liveGoalRef.current = snapshot.liveGoal;
       } else {
         setCourse(null);
-        setGoal(routeState.goal);
-        setPlannerInput(shouldPrefillPlannerInput ? routeState.goal : "");
+        setGoal(routeGoalSeed);
+        setPlannerInput(shouldPrefillPlannerInput ? routeGoalSeed : "");
         setPreferredBlockType(routeState.preferredBlockType);
         setUseWebSearch(routeState.useWebSearch);
         setPlan(null);
@@ -968,10 +1025,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       return;
     }
 
+    const storedGoal = resolveStoredGoalValue(goal, plan, course);
     const snapshot: LearnSessionSnapshot = {
       courseId: course?.courseId ?? null,
       course,
-      goal,
+      goal: storedGoal,
       plannerInput,
       preferredBlockType,
       useWebSearch,
@@ -1173,6 +1231,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     topicSummary: string;
     lesson: LessonBlock;
   }) {
+    const quizGoal = getActiveGoalValue();
+    if (!quizGoal) {
+      setGeneratedQuizError("Describe what you want to learn first.");
+      return null;
+    }
+
     const requestId = `${options.topicId}:${Date.now().toString(36)}`;
     companionQuizRequestRef.current = requestId;
     setIsGeneratingQuiz(true);
@@ -1189,7 +1253,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          goal: normalizeValue(goal || plannerInput),
+          goal: quizGoal,
           topicId: options.topicId,
           topicTitle: options.topicTitle,
           topicSummary: options.topicSummary,
@@ -1457,6 +1521,19 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     return nextMaterials;
   }
 
+  function seedLearnGoal(nextValue: string) {
+    const trimmed = normalizeValue(nextValue);
+    if (!trimmed) {
+      return;
+    }
+
+    if (normalizeValue(goalRef.current ?? "")) {
+      return;
+    }
+
+    setGoal(trimmed);
+  }
+
   async function handleAttachPdfFiles(files: File[]) {
     if (!sessionId) {
       setMaterialError("Start a learn session before attaching PDFs.");
@@ -1552,6 +1629,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         setChatMessages((prev) => [...prev, { role: "assistant", content: data.content }]);
       }
 
+      if (shouldApplyLearnUpdates && (data.artifact || data.plan)) {
+        seedLearnGoal(input);
+      }
+
       if (shouldApplyLearnUpdates && data.targetPanel === "learn" && data.artifact) {
         const nextTopicId = currentTopicId ?? null;
         setGeneratedBlock(data.artifact);
@@ -1615,8 +1696,13 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   async function generateSelectedTopic(options: {
     preferredBlockTypeOverride?: TutorBlockType | "";
   } = {}) {
-    const studyGoal = normalizeValue(goal);
+    const studyGoal = getActiveGoalValue();
     const nextPreferredBlockType = options.preferredBlockTypeOverride ?? preferredBlockType;
+
+    if (!studyGoal) {
+      setTopicError("Describe what you want to learn first.");
+      return;
+    }
 
     if (!plan) {
       setTopicError("Generate topics first.");
@@ -1871,7 +1957,17 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }
 
   function getActiveGoalValue(goalOverride?: string) {
-    return normalizeValue((goalOverride ?? goal) || plannerInput);
+    const explicitGoal = normalizeGoalText(goalOverride ?? goal);
+    if (explicitGoal) {
+      return explicitGoal;
+    }
+
+    const derivedGoal = buildGoalFallback(plan, course);
+    if (derivedGoal) {
+      return derivedGoal;
+    }
+
+    return normalizeValue(plannerInput);
   }
 
   function buildLiveStudyGoal(goalOverride?: string) {
@@ -2124,6 +2220,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     const shouldTargetLearn = data.targetPanel === "learn" || data.responseType !== "chat";
+
+    if (shouldTargetLearn && (data.artifact || data.plan)) {
+      seedLearnGoal(options.message);
+    }
 
     if (shouldTargetLearn && data.artifact) {
       const nextTopicId = currentTopicId;

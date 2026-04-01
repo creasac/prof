@@ -76,6 +76,7 @@ import {
   createUrlSourceMaterial,
   findSourceMaterial,
 } from "./source-materials.js";
+import { normalizeReasoningChatResponse } from "./reasoning-chat.js";
 import { normalizeTutorBlock } from "./tutor.js";
 import { createVoiceSession, isVoiceEnabled } from "./providers/voice/index.js";
 
@@ -85,6 +86,9 @@ const allowedOrigins = env.WEB_ORIGIN.split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
 const corsOrigin = env.NODE_ENV === "development" ? true : allowedOrigins.length > 0 ? allowedOrigins : true;
+const reasoningChatModelSchema = zodToJsonSchema(reasoningChatResponseSchema.omit({ sources: true }), {
+  $refStrategy: "none",
+});
 
 app.use(
   cors({
@@ -433,7 +437,16 @@ app.post("/api/voice/session", async (_req, res, next) => {
 
 app.post("/api/reasoning/block", async (req, res, next) => {
   try {
-    const input = reasoningBlockRequestSchema.parse(req.body);
+    const requestParse = reasoningBlockRequestSchema.safeParse(req.body);
+    if (!requestParse.success) {
+      res.status(400).json({
+        error: "Invalid request",
+        details: requestParse.error.flatten(),
+      });
+      return;
+    }
+
+    const input = requestParse.data;
     const schema = zodToJsonSchema(tutorBlockSchema, {
       $refStrategy: "none",
     });
@@ -681,7 +694,16 @@ app.post("/api/reasoning/plan", async (req, res, next) => {
 
 app.post("/api/reasoning/topic-block/stream", async (req, res, next) => {
   try {
-    const input = plannedTopicBlockRequestSchema.parse(req.body);
+    const requestParse = plannedTopicBlockRequestSchema.safeParse(req.body);
+    if (!requestParse.success) {
+      res.status(400).json({
+        error: "Invalid request",
+        details: requestParse.error.flatten(),
+      });
+      return;
+    }
+
+    const input = requestParse.data;
     const topic = findPlanTopic(input.plan, input.topicId);
 
     if (!topic) {
@@ -772,7 +794,16 @@ app.post("/api/reasoning/topic-block/stream", async (req, res, next) => {
 
 app.post("/api/reasoning/topic-block", async (req, res, next) => {
   try {
-    const input = plannedTopicBlockRequestSchema.parse(req.body);
+    const requestParse = plannedTopicBlockRequestSchema.safeParse(req.body);
+    if (!requestParse.success) {
+      res.status(400).json({
+        error: "Invalid request",
+        details: requestParse.error.flatten(),
+      });
+      return;
+    }
+
+    const input = requestParse.data;
     const topic = findPlanTopic(input.plan, input.topicId);
 
     if (!topic) {
@@ -817,7 +848,16 @@ app.post("/api/reasoning/topic-block", async (req, res, next) => {
 
 app.post("/api/reasoning/topic-quiz", async (req, res, next) => {
   try {
-    const input = lessonQuizRequestSchema.parse(req.body);
+    const requestParse = lessonQuizRequestSchema.safeParse(req.body);
+    if (!requestParse.success) {
+      res.status(400).json({
+        error: "Invalid request",
+        details: requestParse.error.flatten(),
+      });
+      return;
+    }
+
+    const input = requestParse.data;
     const schema = zodToJsonSchema(quizBlockSchema, {
       $refStrategy: "none",
     });
@@ -866,30 +906,6 @@ app.post("/api/reasoning/chat", async (req, res, next) => {
 
     const input = requestParse.data;
 
-    const responseSchema = {
-      type: "OBJECT",
-      properties: {
-        responseType: {
-          type: "STRING",
-          enum: ["chat", "artifact_create", "artifact_update"],
-        },
-        targetPanel: {
-          type: "STRING",
-          enum: ["chat", "learn"],
-        },
-        content: {
-          type: "STRING",
-        },
-        artifact: {
-          type: "OBJECT",
-        },
-        plan: {
-          type: "OBJECT",
-        },
-      },
-      required: ["responseType", "targetPanel"],
-    };
-
     const response = await generateReasoningContent({
       prompt: buildChatPrompt(input),
       searchQuery: input.message,
@@ -898,12 +914,15 @@ app.post("/api/reasoning/chat", async (req, res, next) => {
       sourceMaterials: input.sourceMaterials,
       config: {
         responseMimeType: "application/json",
-        responseSchema,
+        responseJsonSchema: reasoningChatModelSchema,
       },
       emptyResponseError: "Reasoning model returned an empty response.",
     });
 
-    const parsed = reasoningChatResponseSchema.parse(JSON.parse(response.text));
+    const parsed = normalizeReasoningChatResponse(JSON.parse(response.text), {
+      requestType: input.requestType,
+      preferredBlockType: input.preferredBlockType,
+    });
 
     res.json({
       ...parsed,
@@ -914,8 +933,13 @@ app.post("/api/reasoning/chat", async (req, res, next) => {
   }
 });
 
-app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (error instanceof ZodError) {
+    console.error("Structured validation failed", {
+      method: req.method,
+      path: req.path,
+      issues: error.issues,
+    });
     res.status(500).json({
       error: "Structured output validation failed",
       details: error.flatten(),
