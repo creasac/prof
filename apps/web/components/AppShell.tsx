@@ -373,7 +373,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   closeDrawerIfNeeded();
                 }}
               >
-                <Image src="/icon.png" alt="prof." width={40} height={40} style={styles.brandIcon} priority />
+                <Image src="/icon.png" alt="prof." width={40} height={40} style={styles.brandIcon} priority unoptimized />
               </Link>
 
               <button

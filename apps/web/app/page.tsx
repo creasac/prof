@@ -57,7 +57,7 @@ export default function HomePage() {
     <main style={styles.page}>
       <section style={styles.shell}>
         <div style={styles.hero}>
-          <Image src="/icon.png" alt="Prof." width={120} height={120} style={styles.logo} priority />
+          <Image src="/icon.png" alt="Prof." width={120} height={120} style={styles.logo} priority unoptimized />
           <h1 style={styles.tagline}>knowledge liberates</h1>
         </div>
 
