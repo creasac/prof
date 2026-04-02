@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type CSSProperties } from "react";
-import type { TutorBlockType } from "@prof/contracts";
 
 import { PromptComposer } from "../components/PromptComposer";
 import { buildLearnHref, createLearnSessionId } from "../lib/learn-route";
@@ -12,8 +11,6 @@ export default function HomePage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [goal, setGoal] = useState("");
-  const [preferredBlockType, setPreferredBlockType] = useState<TutorBlockType | "">("");
-  const [useWebSearch, setUseWebSearch] = useState(false);
   const [pendingAction, setPendingAction] = useState<"generate" | "live" | null>(null);
 
   function launch(action: "generate" | "live") {
@@ -27,8 +24,6 @@ export default function HomePage() {
           courseOwnerUsername: null,
           courseSlug: null,
           goal,
-          preferredBlockType,
-          useWebSearch,
           autoStartAction: action,
         }),
       );
@@ -46,10 +41,6 @@ export default function HomePage() {
         <PromptComposer
           goal={goal}
           onGoalChange={setGoal}
-          preferredBlockType={preferredBlockType}
-          onPreferredBlockTypeChange={setPreferredBlockType}
-          useWebSearch={useWebSearch}
-          onUseWebSearchChange={setUseWebSearch}
           onGenerate={() => launch("generate")}
           onLive={() => launch("live")}
           generateLabel={isPending && pendingAction === "generate" ? "Sending..." : "Send"}

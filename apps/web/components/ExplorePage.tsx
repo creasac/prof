@@ -103,12 +103,12 @@ export function ExplorePage() {
                     <div style={styles.placeholder}>explore</div>
                   )}
                   <div style={styles.cardBody}>
-                    <p style={styles.courseRoute}>
-                      @{course.ownerUsername}/{course.courseSlug}
-                    </p>
                     <h2 style={styles.cardTitle}>{course.title}</h2>
                     <p style={styles.cardMeta}>
                       {getArtifactLabel(course.artifactCount)} · updated {formatUpdatedAt(course.updatedAt)}
+                    </p>
+                    <p style={styles.courseRoute}>
+                      @{course.ownerUsername}/{course.courseSlug}
                     </p>
                   </div>
                 </Link>

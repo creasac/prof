@@ -291,8 +291,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         courseOwnerUsername: null,
         courseSlug: null,
         goal: "",
-        preferredBlockType: "",
-        useWebSearch: false,
         autoStartAction: null,
       }),
     );
@@ -323,8 +321,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       courseOwnerUsername: null,
       courseSlug: null,
       goal: "",
-      preferredBlockType: "",
-      useWebSearch: false,
       autoStartAction: null,
     });
 

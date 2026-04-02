@@ -34,7 +34,7 @@ export function PlannerView({
   isGeneratingTopic,
   onSelectTopic,
   onGenerateTopic,
-  actionLabel = "Generate",
+  actionLabel = "Generate lesson",
   actionHint,
   showAction = true,
 }: PlannerViewProps) {
@@ -95,7 +95,7 @@ export function PlannerView({
             {actionHint ??
               (plan
                 ? selectedTopicId
-                  ? "Generate the selected item into the lesson area below."
+                  ? "Generate a lesson for the selected item below."
                   : "Select an item to generate it."
                 : "Finish generating the outline before creating a lesson.")}
           </p>

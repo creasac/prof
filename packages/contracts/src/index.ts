@@ -255,8 +255,6 @@ export const learnSessionSnapshotSchema = z.object({
   course: courseRefSchema.nullable().default(null),
   goal: z.string(),
   plannerInput: z.string(),
-  preferredBlockType: tutorBlockTypeSchema.or(z.literal("")),
-  useWebSearch: z.boolean(),
   plan: coursePlanSchema.nullable(),
   planClarification: planningClarificationSchema.nullable(),
   planSources: z.array(groundingSourceSchema),

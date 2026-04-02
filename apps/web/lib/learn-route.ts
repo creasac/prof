@@ -1,4 +1,4 @@
-import { createPublicId, type TutorBlockType } from "@prof/contracts";
+import { createPublicId } from "@prof/contracts";
 
 export type TutorLaunchAction = "generate" | "live" | null;
 
@@ -6,8 +6,6 @@ export type LearnRouteState = {
   courseOwnerUsername: string | null;
   courseSlug: string | null;
   goal: string;
-  preferredBlockType: TutorBlockType | "";
-  useWebSearch: boolean;
   autoStartAction: TutorLaunchAction;
 };
 
@@ -17,14 +15,6 @@ export type LearnHrefState = LearnRouteState & {
 
 type SearchParamsRecord = Record<string, string | string[] | undefined>;
 type SearchParamsLike = SearchParamsRecord | { get: (name: string) => string | null };
-
-const VALID_BLOCK_TYPES = new Set<TutorBlockType>([
-  "lesson",
-  "quiz",
-  "flashcards",
-  "essay_prompt",
-  "follow_up_question",
-]);
 
 function hasGetter(searchParams: SearchParamsLike): searchParams is { get: (name: string) => string | null } {
   return typeof (searchParams as { get?: unknown }).get === "function";
@@ -40,7 +30,6 @@ function readParam(searchParams: SearchParamsLike, name: string) {
 }
 
 export function parseLearnRouteState(searchParams: SearchParamsLike): LearnRouteState {
-  const rawPreferredBlockType = readParam(searchParams, "format") ?? "";
   const rawAutoStartAction = readParam(searchParams, "autostart");
   const rawCourseOwnerUsername = readParam(searchParams, "owner");
   const rawCourseSlug = readParam(searchParams, "course");
@@ -49,10 +38,6 @@ export function parseLearnRouteState(searchParams: SearchParamsLike): LearnRoute
     courseOwnerUsername: rawCourseOwnerUsername?.trim() ? rawCourseOwnerUsername.trim().toLowerCase() : null,
     courseSlug: rawCourseSlug?.trim() ? rawCourseSlug.trim().toLowerCase() : null,
     goal: readParam(searchParams, "goal") ?? "",
-    preferredBlockType: VALID_BLOCK_TYPES.has(rawPreferredBlockType as TutorBlockType)
-      ? (rawPreferredBlockType as TutorBlockType)
-      : "",
-    useWebSearch: readParam(searchParams, "search") === "1",
     autoStartAction:
       rawAutoStartAction === "generate" || rawAutoStartAction === "live" ? rawAutoStartAction : null,
   };
@@ -72,14 +57,6 @@ export function buildLearnHref(state: LearnHrefState) {
 
   if (state.goal) {
     params.set("goal", state.goal);
-  }
-
-  if (state.preferredBlockType) {
-    params.set("format", state.preferredBlockType);
-  }
-
-  if (state.useWebSearch) {
-    params.set("search", "1");
   }
 
   if (state.autoStartAction) {

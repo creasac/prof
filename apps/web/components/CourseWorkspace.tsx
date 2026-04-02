@@ -128,8 +128,6 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
           courseOwnerUsername: course.ownerUsername,
           courseSlug: course.courseSlug,
           goal: "",
-          preferredBlockType: "",
-          useWebSearch: false,
           autoStartAction: null,
         }),
       );

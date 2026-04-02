@@ -217,8 +217,6 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
                 courseOwnerUsername: snapshot?.course?.ownerUsername ?? null,
                 courseSlug: snapshot?.course?.courseSlug ?? null,
                 goal: "",
-                preferredBlockType: "",
-                useWebSearch: false,
                 autoStartAction: null,
               })}
               style={styles.link}
@@ -243,8 +241,6 @@ export function LearnQuizPage({ sessionId }: LearnQuizPageProps) {
     courseOwnerUsername: snapshot.course?.ownerUsername ?? null,
     courseSlug: snapshot.course?.courseSlug ?? null,
     goal: "",
-    preferredBlockType: "",
-    useWebSearch: false,
     autoStartAction: null,
   });
 

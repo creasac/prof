@@ -624,8 +624,6 @@ function createSeededSessionSnapshot(snapshot: CourseSnapshot, course: CourseRef
     course,
     goal: resolveStoredGoalValue(snapshot.goal, snapshot.plan, course),
     plannerInput: "",
-    preferredBlockType: "",
-    useWebSearch: false,
     plan: snapshot.plan,
     planClarification: null,
     planSources: snapshot.planSources,
@@ -715,17 +713,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const { data: authSession, isPending: isAuthPending } = authClient.useSession();
   const routeState = parseLearnRouteState(searchParams);
   const shouldPrefillPlannerInput = !routeState.autoStartAction;
-  const autoStartKey = routeState.autoStartAction
-    ? [routeState.autoStartAction, routeState.goal, routeState.preferredBlockType, routeState.useWebSearch].join("|")
-    : null;
+  const autoStartKey = routeState.autoStartAction ? [routeState.autoStartAction, routeState.goal].join("|") : null;
 
   const [course, setCourse] = useState<CourseRef | null>(null);
   const [goal, setGoal] = useState(() => routeState.goal);
   const [plannerInput, setPlannerInput] = useState(() => (shouldPrefillPlannerInput ? routeState.goal : ""));
-  const [preferredBlockType, setPreferredBlockType] = useState<TutorBlockType | "">(
-    () => routeState.preferredBlockType,
-  );
-  const [useWebSearch, setUseWebSearch] = useState(() => routeState.useWebSearch);
   const [isPlanning, setIsPlanning] = useState(false);
   const [plan, setPlan] = useState<CoursePlan | null>(null);
   const [planClarification, setPlanClarification] = useState<PlanningClarification | null>(null);
@@ -1027,8 +1019,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             course: null,
             goal: routeGoalSeed,
             plannerInput: shouldPrefillPlannerInput ? routeGoalSeed : "",
-            preferredBlockType: routeState.preferredBlockType,
-            useWebSearch: routeState.useWebSearch,
             plan: null,
             planClarification: null,
             planSources: [],
@@ -1067,8 +1057,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       setCourse(nextSnapshot.course ?? null);
       setGoal(resolveStoredGoalValue(nextSnapshot.goal, nextSnapshot.plan, nextSnapshot.course ?? null));
       setPlannerInput(nextSnapshot.plannerInput);
-      setPreferredBlockType(nextSnapshot.preferredBlockType);
-      setUseWebSearch(nextSnapshot.useWebSearch);
       setPlan(nextSnapshot.plan);
       setPlanClarification(nextSnapshot.planClarification);
       setPlanSources(nextSnapshot.planSources);
@@ -1113,8 +1101,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     routeState.courseOwnerUsername,
     routeState.courseSlug,
     routeState.goal,
-    routeState.preferredBlockType,
-    routeState.useWebSearch,
     sessionId,
     shouldPrefillPlannerInput,
   ]);
@@ -1142,8 +1128,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     autoStartConsumedRef.current = autoStartKey;
     setGoal(routeState.goal);
     setPlannerInput("");
-    setPreferredBlockType(routeState.preferredBlockType);
-    setUseWebSearch(routeState.useWebSearch);
 
     router.replace(
       buildLearnHref({
@@ -1151,8 +1135,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         courseOwnerUsername: course?.ownerUsername ?? routeState.courseOwnerUsername,
         courseSlug: course?.courseSlug ?? routeState.courseSlug,
         goal: "",
-        preferredBlockType: "",
-        useWebSearch: false,
         autoStartAction: null,
       }),
       { scroll: false },
@@ -1162,7 +1144,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       void submitPlannerRequest({
         goalOverride: routeState.goal,
         inputOverride: routeState.goal,
-        useWebSearchOverride: routeState.useWebSearch,
       });
       return;
     }
@@ -1174,8 +1155,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     autoStartKey,
     routeState.autoStartAction,
     routeState.goal,
-    routeState.preferredBlockType,
-    routeState.useWebSearch,
     router,
     course,
     routeState.courseOwnerUsername,
@@ -1194,8 +1173,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       course,
       goal: storedGoal,
       plannerInput,
-      preferredBlockType,
-      useWebSearch,
       plan,
       planClarification,
       planSources,
@@ -1324,7 +1301,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     planClarification,
     planSources,
     plannerInput,
-    preferredBlockType,
     quizProgress,
     quizResultsByTopic,
     selectedTopicId,
@@ -1332,7 +1308,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     isSessionHydrated,
     sourceMaterials,
     topicArtifacts,
-    useWebSearch,
   ]);
 
   useEffect(() => {
@@ -1437,8 +1412,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         courseOwnerUsername: null,
         courseSlug: null,
         goal: "",
-        preferredBlockType: "",
-        useWebSearch: false,
         autoStartAction: null,
       }),
       { scroll: false },
@@ -1509,6 +1482,15 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
     configPromiseRef.current = request;
     return request;
+  }
+
+  async function getAutomaticSearchEnabled() {
+    try {
+      const config = configRef.current ?? (await loadConfig());
+      return config.search.enabled;
+    } catch {
+      return false;
+    }
   }
 
   function showTopicArtifacts(topicId: string | null) {
@@ -1594,7 +1576,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   async function submitPlannerRequest(options: {
     goalOverride?: string;
     inputOverride?: string;
-    useWebSearchOverride?: boolean;
   } = {}) {
     if (planningAbortRef.current) {
       planningAbortRef.current.abort();
@@ -1608,7 +1589,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     });
     const nextGoalSource = options.goalOverride ?? goal;
     const nextInput = normalizeValue(options.inputOverride ?? plannerInput);
-    const nextUseWebSearch = options.useWebSearchOverride ?? useWebSearch;
     const requestGoal = mode === "draft" ? normalizeValue(options.goalOverride ?? nextInput) : nextGoalSource;
 
     if (!requestGoal) {
@@ -1627,7 +1607,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
     setPlannerInput("");
     setGoal(requestGoal);
-    setUseWebSearch(nextUseWebSearch);
     setIsPlanning(true);
     setPlannerError(null);
     setTopicError(null);
@@ -1643,6 +1622,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setIsLearnPanelCollapsed(false);
 
     try {
+      const useWebSearch = await getAutomaticSearchEnabled();
       const requestSourceMaterials = await ensureUrlMaterialsAttached([requestGoal, nextInput].filter(Boolean).join("\n"));
       const response = await fetchApi("/api/reasoning/plan/stream", {
         method: "POST",
@@ -1655,7 +1635,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           goal: requestGoal,
           currentPlan: mode === "refine" ? plan : undefined,
           userInput: mode === "draft" ? undefined : nextInput,
-          useWebSearch: nextUseWebSearch,
+          useWebSearch,
           sourceMaterials: requestSourceMaterials,
         }),
       });
@@ -1893,7 +1873,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const intent = classifyTextIntent(input) ?? clarificationIntent;
     const requestType = intent?.requestType ?? "general_query";
     const shouldApplyLearnUpdates = requestType !== "general_query";
-    const preferredType = intent?.preferredBlockType ?? (preferredBlockType || undefined);
+    const preferredType = intent?.preferredBlockType;
     const currentTopicId = currentTopic?.id ?? selectedTopicId ?? generatedTopicId;
     const userMessage = createSessionMessage({
       role: "user",
@@ -1909,6 +1889,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setPlannerError(null);
 
     try {
+      const useWebSearch = await getAutomaticSearchEnabled();
       const requestSourceMaterials = await ensureUrlMaterialsAttached(trimmedInput);
       const response = await fetchApi("/api/reasoning/chat", {
         method: "POST",
@@ -1937,11 +1918,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       const data = (await response.json()) as ReasoningChatResponse;
 
       if (data.content) {
+        const content = data.content;
         setChatMessages((prev) => [
           ...prev,
           createSessionMessage({
             role: "assistant",
-            content: data.content,
+            content,
             channel: "chat",
             sources: data.sources ?? [],
             responseType: data.responseType,
@@ -2015,11 +1997,9 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     chatAutoScrollLockedRef.current = !isChatScrolledToBottom(element);
   }
 
-  async function generateSelectedTopic(options: {
-    preferredBlockTypeOverride?: TutorBlockType | "";
-  } = {}) {
+  async function generateSelectedTopic() {
     const studyGoal = getActiveGoalValue();
-    const nextPreferredBlockType = options.preferredBlockTypeOverride ?? preferredBlockType;
+    const preferredBlockType: TutorBlockType = "lesson";
 
     if (!studyGoal) {
       setTopicError("Describe what you want to learn first.");
@@ -2051,7 +2031,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const previousBlockSources = blockSources;
 
     setSelectedTopicId(topicId);
-    setPreferredBlockType(nextPreferredBlockType);
     setIsGeneratingTopic(true);
     setTopicError(null);
     setGeneratedTopicId(topicId);
@@ -2062,11 +2041,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setIsGeneratingQuiz(false);
     companionQuizRequestRef.current = null;
     setBlockSources([]);
-    setStreamedGeneratedBlock(createStreamedTopicBlockPreview(topic.title, nextPreferredBlockType));
+    setStreamedGeneratedBlock(createStreamedTopicBlockPreview(topic.title, preferredBlockType));
     setIsLearnPanelCollapsed(true);
     scrollGeneratedSectionIntoView();
 
     try {
+      const useWebSearch = await getAutomaticSearchEnabled();
       const response = await fetchApi("/api/reasoning/topic-block/stream", {
         method: "POST",
         headers: {
@@ -2076,7 +2056,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           goal: studyGoal,
           plan,
           topicId,
-          preferredBlockType: nextPreferredBlockType || undefined,
+          preferredBlockType,
           useWebSearch,
           sourceMaterials,
         }),
@@ -2110,14 +2090,14 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         switch (event.type) {
           case "meta":
             setStreamedGeneratedBlock((current) => ({
-              ...(current ?? createStreamedTopicBlockPreview(topic.title, nextPreferredBlockType)),
+              ...(current ?? createStreamedTopicBlockPreview(topic.title, preferredBlockType)),
               blockType: event.meta.blockType,
               title: event.meta.title ?? current?.title ?? topic.title,
             }));
             break;
           case "lesson":
             setStreamedGeneratedBlock((current) => {
-              const preview = current ?? createStreamedTopicBlockPreview(topic.title, nextPreferredBlockType);
+              const preview = current ?? createStreamedTopicBlockPreview(topic.title, preferredBlockType);
 
               return {
                 ...preview,
@@ -2129,7 +2109,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             break;
           case "markdown":
             setStreamedGeneratedBlock((current) => {
-              const preview = current ?? createStreamedTopicBlockPreview(topic.title, nextPreferredBlockType);
+              const preview = current ?? createStreamedTopicBlockPreview(topic.title, preferredBlockType);
 
               return {
                 ...preview,
@@ -2139,7 +2119,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             break;
           case "quiz":
             setStreamedGeneratedBlock((current) => {
-              const preview = current ?? createStreamedTopicBlockPreview(topic.title, nextPreferredBlockType);
+              const preview = current ?? createStreamedTopicBlockPreview(topic.title, preferredBlockType);
 
               return {
                 ...preview,
@@ -2150,7 +2130,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             break;
           case "question":
             setStreamedGeneratedBlock((current) => {
-              const preview = current ?? createStreamedTopicBlockPreview(topic.title, nextPreferredBlockType);
+              const preview = current ?? createStreamedTopicBlockPreview(topic.title, preferredBlockType);
 
               return {
                 ...preview,
@@ -2161,7 +2141,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             break;
           case "card":
             setStreamedGeneratedBlock((current) => {
-              const preview = current ?? createStreamedTopicBlockPreview(topic.title, nextPreferredBlockType);
+              const preview = current ?? createStreamedTopicBlockPreview(topic.title, preferredBlockType);
 
               return {
                 ...preview,
@@ -2172,7 +2152,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             break;
           case "essay":
             setStreamedGeneratedBlock((current) => {
-              const preview = current ?? createStreamedTopicBlockPreview(topic.title, nextPreferredBlockType);
+              const preview = current ?? createStreamedTopicBlockPreview(topic.title, preferredBlockType);
 
               return {
                 ...preview,
@@ -2184,7 +2164,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             break;
           case "follow_up":
             setStreamedGeneratedBlock((current) => {
-              const preview = current ?? createStreamedTopicBlockPreview(topic.title, nextPreferredBlockType);
+              const preview = current ?? createStreamedTopicBlockPreview(topic.title, preferredBlockType);
 
               return {
                 ...preview,
@@ -2520,6 +2500,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const currentTopicId = currentTopic?.id ?? selectedTopicIdRef.current ?? generatedTopicIdRef.current ?? null;
     const currentArtifacts = buildCurrentArtifactsSnapshot();
     const chatHistory = options.chatHistory ?? getLiveChatHistory();
+    const useWebSearch = await getAutomaticSearchEnabled();
     const requestSourceMaterials = await ensureUrlMaterialsAttached(options.message);
 
     const response = await fetchApi("/api/reasoning/chat", {
@@ -2531,7 +2512,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         message: options.message,
         requestType: options.requestType,
         updateTarget: options.updateTarget,
-        preferredBlockType: (options.preferredBlockType ?? preferredBlockType) || undefined,
+        preferredBlockType: options.preferredBlockType,
         chatHistory,
         currentPlan: planSnapshot,
         currentTopic: currentTopic ?? undefined,
@@ -2549,11 +2530,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const data = (await response.json()) as ReasoningChatResponse;
 
     if (data.content && options.appendToLiveMessages) {
+      const content = data.content;
       setLiveMessages((prev) => [
         ...prev,
         createSessionMessage({
           role: "assistant",
-          content: data.content,
+          content,
           channel: "live",
           sources: data.sources ?? [],
           responseType: data.responseType,
@@ -2600,7 +2582,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       await submitPlannerRequest({
         goalOverride: fallbackGoal,
         inputOverride: trimmed,
-        useWebSearchOverride: useWebSearch,
       });
       return { kind: "plan" };
     }
@@ -2848,7 +2829,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           REASONING_UPDATE_TARGETS,
         );
         const requestedBlockType = parseEnumValue(args.preferredBlockType, REASONING_BLOCK_TYPES);
-        const preferredTypeHint = requestedBlockType ?? (preferredBlockType || undefined);
+        const preferredTypeHint = requestedBlockType ?? derivePreferredBlockType(message);
         const intent: LiveReasoningIntent = {
           requestType: requestType ?? "general_query",
           updateTarget,
@@ -3360,8 +3341,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         courseOwnerUsername: course?.ownerUsername ?? routeState.courseOwnerUsername,
         courseSlug: course?.courseSlug ?? routeState.courseSlug,
         goal: nextGoal,
-        preferredBlockType,
-        useWebSearch,
         autoStartAction: action,
       }),
       { scroll: false },
@@ -3626,11 +3605,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
                 <div style={styles.emptyState}>
                   <p style={styles.emptyTitle}>{selectedTopic ? "The selected topic is ready." : "No topic generated yet."}</p>
                   <p style={styles.emptyText}>
-                    {selectedTopic
-                      ? "Use Generate to materialize just this topic."
-                      : isPlanning
-                        ? "Wait for topics to finish streaming, then select one."
-                        : "Generate topics, select one, and then create the lesson here."}
+                      {selectedTopic
+                        ? "Use Generate to materialize just this topic."
+                        : isPlanning
+                          ? "Wait for topics to finish streaming, then select one."
+                          : "Generate topics, select one, and then generate the lesson here."}
                   </p>
                 </div>
               )}
@@ -3814,14 +3793,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             </div>
           ) : null}
 
-	          <div style={styles.chatComposer}>
-	            <PromptComposer
-	              goal={plannerInput}
+          <div style={styles.chatComposer}>
+            <PromptComposer
+              goal={plannerInput}
               onGoalChange={setPlannerInput}
-              preferredBlockType={preferredBlockType}
-              onPreferredBlockTypeChange={setPreferredBlockType}
-              useWebSearch={useWebSearch}
-              onUseWebSearchChange={setUseWebSearch}
               onGenerate={() => {
                 if (isPlanning) {
                   stopPlannerRequest();
@@ -3842,22 +3817,22 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
                 void submitChatRequest(inputSnapshot);
               }}
-	              onLive={() => {
+              onLive={() => {
                 if (launchSessionRoute("live")) {
                   return;
                 }
 
                 void toggleLiveConnection();
               }}
-	              generateLabel={isPlanning ? "Stop" : "Send"}
-                showAttach={Boolean(authSession?.user?.id && sessionId)}
-                onAttachPdfFiles={(files) => {
-                  void handleAttachPdfFiles(files);
-                }}
-                attachBusy={isUploadingMaterial}
-                attachDisabled={isUploadingMaterial || !sessionId}
-	              generateBusy={isPlanning}
-	              generateIconOnly
+              generateLabel={isPlanning ? "Stop" : "Send"}
+              showAttach={Boolean(authSession?.user?.id && sessionId)}
+              onAttachPdfFiles={(files) => {
+                void handleAttachPdfFiles(files);
+              }}
+              attachBusy={isUploadingMaterial}
+              attachDisabled={isUploadingMaterial || !sessionId}
+              generateBusy={isPlanning}
+              generateIconOnly
               liveLabel={getLiveActionLabel(liveStatus)}
               showMute={showMuteControl}
               muteLabel={isMicActive ? "Mute" : "Unmute"}

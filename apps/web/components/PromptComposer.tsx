@@ -1,6 +1,5 @@
 "use client";
 
-import type { TutorBlockType } from "@prof/contracts";
 import { useRef, type CSSProperties, type KeyboardEvent } from "react";
 
 import { IconText } from "./TutorUi";
@@ -8,10 +7,6 @@ import { IconText } from "./TutorUi";
 type PromptComposerProps = {
   goal: string;
   onGoalChange: (value: string) => void;
-  preferredBlockType: TutorBlockType | "";
-  onPreferredBlockTypeChange: (value: TutorBlockType | "") => void;
-  useWebSearch: boolean;
-  onUseWebSearchChange: (value: boolean) => void;
   onGenerate: () => void;
   onLive: () => void;
   onAttachPdfFiles?: (files: File[]) => void;
@@ -38,10 +33,6 @@ type PromptComposerProps = {
 export function PromptComposer({
   goal,
   onGoalChange,
-  preferredBlockType,
-  onPreferredBlockTypeChange,
-  useWebSearch,
-  onUseWebSearchChange,
   onGenerate,
   onLive,
   onAttachPdfFiles,
@@ -116,43 +107,6 @@ export function PromptComposer({
           ...(isHome ? styles.homeFooter : styles.learnFooter),
         }}
       >
-        <div style={styles.optionsRow}>
-          <label style={styles.field}>
-            <span style={styles.hiddenLabel}>Output format</span>
-            <select
-              style={{
-                ...styles.select,
-                ...(isHome ? null : styles.learnSelect),
-              }}
-              value={preferredBlockType}
-              onChange={(event) => onPreferredBlockTypeChange(event.target.value as TutorBlockType | "")}
-            >
-              <option value="">Auto</option>
-              <option value="lesson">Lesson</option>
-              <option value="quiz">Quiz</option>
-              <option value="flashcards">Cards</option>
-              <option value="essay_prompt">Essay</option>
-              <option value="follow_up_question">Follow-up</option>
-            </select>
-          </label>
-
-          <label
-            style={{
-              ...styles.checkboxLabel,
-              ...(isHome ? null : styles.learnCheckboxLabel),
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={useWebSearch}
-              onChange={(event) => onUseWebSearchChange(event.target.checked)}
-            />
-            <IconText icon="search" size={15}>
-              Search
-            </IconText>
-          </label>
-        </div>
-
         <div style={styles.actionsRow}>
           {showAttach ? (
             <>
@@ -293,41 +247,6 @@ const styles: Record<string, CSSProperties> = {
   },
   learnFooter: {
     padding: "6px 10px 10px",
-  },
-  optionsRow: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "8px",
-    alignItems: "flex-end",
-  },
-  field: {
-    display: "flex",
-  },
-  select: {
-    minWidth: "92px",
-    borderRadius: "10px",
-    border: "1px solid rgba(72, 42, 22, 0.14)",
-    background: "var(--panel-strong)",
-    padding: "5px 8px",
-    fontSize: "0.82rem",
-    color: "#4c392e",
-  },
-  learnSelect: {
-    minWidth: "80px",
-    padding: "4px 7px",
-    fontSize: "0.78rem",
-  },
-  checkboxLabel: {
-    display: "inline-flex",
-    gap: "4px",
-    alignItems: "center",
-    color: "#4c392e",
-    fontSize: "0.84rem",
-    minHeight: "32px",
-  },
-  learnCheckboxLabel: {
-    fontSize: "0.8rem",
-    minHeight: "30px",
   },
   actionsRow: {
     display: "flex",
