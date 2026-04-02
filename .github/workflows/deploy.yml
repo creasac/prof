@@ -172,5 +172,6 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/web
           command: deploy --var API_PROXY_TARGET=${{ vars.API_PROXY_TARGET }}

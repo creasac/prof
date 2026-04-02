@@ -29,7 +29,7 @@ Create a Cloudflare Worker from the GitHub repo.
 Recommended Workers Builds settings:
 
 - Worker name: `prof`
-- Production branch: `main`
+- Production branch: `master`
 - Root directory: `.`
 - Build command: `npm run build:cf:web`
 - Deploy command: `npm run deploy:cf:web`
@@ -151,6 +151,7 @@ It runs on pushes to `master` and does:
 
 Required GitHub repository variables:
 
+- `CLOUDFLARE_ACCOUNT_ID`
 - `GCP_PROJECT_ID`
 - `GCP_REGION`
 - `GCP_WORKLOAD_IDENTITY_PROVIDER`
@@ -189,3 +190,15 @@ Required GitHub repository secrets:
 - `GEMINI_API_KEY`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
+
+For `CLOUDFLARE_API_TOKEN`, use Cloudflare's `Edit Cloudflare Workers` token template or an equivalent custom token that includes:
+
+- `Workers Scripts Write`
+- `Workers Routes Write`
+- `Workers KV Storage Write`
+- `Workers R2 Storage Write`
+- `Account Settings Read`
+- `User Details Read`
+- `User Memberships Read`
+
+Set `CLOUDFLARE_ACCOUNT_ID` to the 32-character account ID for the target Cloudflare account. If you are already using R2 in the same account, this will usually match `R2_ACCOUNT_ID`.
