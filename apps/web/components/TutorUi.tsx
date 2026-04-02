@@ -31,6 +31,7 @@ export type IconName =
   | "stack"
   | "target"
   | "user"
+  | "waveform"
   | "x";
 
 export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
@@ -49,8 +50,14 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   switch (name) {
     case "attach":
       return (
-        <svg {...svgProps}>
-          <path d="M8.8 12.8 14.9 6.7a3.5 3.5 0 1 1 5 5l-8.3 8.3a5 5 0 1 1-7.1-7.1l8.4-8.4" />
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M16.5 6V17.5a4 4 0 0 1-8 0v-12a2.5 2.5 0 1 1 5 0V15a1 1 0 1 1-2 0V6.25H10V15a2.5 2.5 0 1 0 5 0V5.5a4 4 0 1 0-8 0v12a5.5 5.5 0 1 0 11 0V6h-1.5Z" />
         </svg>
       );
     case "chevronDown":
@@ -155,8 +162,8 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
     case "send":
       return (
         <svg {...svgProps}>
-          <path d="M4 12 20 5l-3.4 14-5.2-4.2L4 12Z" />
-          <path d="m11.4 14.8 2.2 3.9" />
+          <path d="M5 12h12.5" />
+          <path d="m13.5 6.5 5.5 5.5-5.5 5.5" />
         </svg>
       );
     case "stop":
@@ -203,6 +210,22 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
         <svg {...svgProps}>
           <circle cx="12" cy="8.5" r="3.2" />
           <path d="M5.5 18a6.5 6.5 0 0 1 13 0" />
+        </svg>
+      );
+    case "waveform":
+      return (
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <rect x="3" y="9" width="2.2" height="6" rx="1.1" />
+          <rect x="7" y="6.5" width="2.2" height="11" rx="1.1" />
+          <rect x="11" y="4" width="2.2" height="16" rx="1.1" />
+          <rect x="15" y="7.5" width="2.2" height="9" rx="1.1" />
+          <rect x="19" y="10" width="2.2" height="4" rx="1.1" />
         </svg>
       );
     case "x":

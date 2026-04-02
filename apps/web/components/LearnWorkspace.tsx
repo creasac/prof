@@ -61,8 +61,15 @@ import {
 import { buildLearnHref, buildLearnQuizHref, createLearnSessionId, parseLearnRouteState } from "../lib/learn-route";
 import {
   attachUrlMaterial,
+  deleteSourceMaterial,
   uploadPdfMaterial,
 } from "../lib/source-materials-api";
+import {
+  createPendingPdfAttachmentDrafts,
+  readPendingPdfAttachments,
+  writePendingPdfAttachments,
+  type PendingPdfAttachmentDraft,
+} from "../lib/pending-pdf-attachments";
 import {
   buildLearnSessionMaterialFileHref,
   findAttachedUrlMaterial,
@@ -148,6 +155,10 @@ type StreamedTopicBlockPreview = {
   prompt: string;
   guidance: string[];
   reason: string;
+};
+
+type PendingPdfDraft = PendingPdfAttachmentDraft & {
+  status: "staged" | "uploading" | "error";
 };
 
 class PcmPlayer {
@@ -759,6 +770,9 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const [isResizingPane, setIsResizingPane] = useState(false);
   const [isSessionHydrated, setIsSessionHydrated] = useState(() => !sessionId);
   const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
+  const [pendingPdfDrafts, setPendingPdfDrafts] = useState<PendingPdfDraft[]>([]);
+  const [isPendingPdfDraftsHydrated, setIsPendingPdfDraftsHydrated] = useState(() => !sessionId);
+  const [removingMaterialIds, setRemovingMaterialIds] = useState<string[]>([]);
 
   const configRef = useRef<AppConfig | null>(null);
   const planClarificationRef = useRef<PlanningClarification | null>(null);
@@ -785,6 +799,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const generatedQuizRef = useRef<QuizBlock | null>(null);
   const topicArtifactsRef = useRef<Record<string, LearnTopicArtifacts>>({});
   const sourceMaterialsRef = useRef<SourceMaterial[]>([]);
+  const pendingPdfDraftsRef = useRef<PendingPdfDraft[]>([]);
   const liveMessagesRef = useRef<ChatMessage[]>([]);
   const lastLiveStatusRef = useRef<{ text: string; at: number } | null>(null);
   const liveAudioStatusRef = useRef(false);
@@ -807,6 +822,25 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const lastCachedSnapshotKeyRef = useRef<string | null>(null);
   const lastTrackedActivityKeyRef = useRef<string | null>(null);
   const sessionTimestampsRef = useRef<{ createdAt: string; updatedAt: string } | null>(null);
+
+  function commitPendingPdfDrafts(nextDrafts: PendingPdfDraft[]) {
+    pendingPdfDraftsRef.current = nextDrafts;
+    setPendingPdfDrafts(nextDrafts);
+
+    if (sessionId) {
+      writePendingPdfAttachments(
+        sessionId,
+        nextDrafts.map((draft) => ({
+          id: draft.id,
+          file: draft.file,
+        })),
+      );
+    }
+  }
+
+  function updatePendingPdfDrafts(updater: (current: PendingPdfDraft[]) => PendingPdfDraft[]) {
+    commitPendingPdfDrafts(updater(pendingPdfDraftsRef.current));
+  }
 
   useEffect(() => {
     void loadConfig();
@@ -910,6 +944,23 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }, [sourceMaterials]);
 
   useEffect(() => {
+    setIsPendingPdfDraftsHydrated(false);
+
+    if (!sessionId) {
+      commitPendingPdfDrafts([]);
+      setIsPendingPdfDraftsHydrated(true);
+      return;
+    }
+
+    commitPendingPdfDrafts(readPendingPdfAttachments(sessionId).map(createPendingPdfDraft));
+    setIsPendingPdfDraftsHydrated(true);
+  }, [sessionId]);
+
+  useEffect(() => {
+    setIsUploadingMaterial(pendingPdfDrafts.some((draft) => draft.status === "uploading"));
+  }, [pendingPdfDrafts]);
+
+  useEffect(() => {
     liveMessagesRef.current = liveMessages;
   }, [liveMessages]);
 
@@ -919,6 +970,68 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       sendLiveContextUpdate(liveSessionRef.current, digest);
     }
   }, [plan, generatedBlock, generatedQuiz, selectedTopicId, goal, liveStatus]);
+
+  useEffect(() => {
+    if (!sessionId || !isSessionHydrated) {
+      return;
+    }
+
+    if (isAuthPending) {
+      return;
+    }
+
+    if (!authSession?.user?.id) {
+      if (pendingPdfDrafts.length > 0) {
+        setMaterialError((current) => current ?? "Sign in to attach PDFs to a course.");
+      }
+      return;
+    }
+
+    if (pendingPdfDrafts.some((draft) => draft.status === "uploading")) {
+      return;
+    }
+
+    const nextDraft = pendingPdfDrafts.find((draft) => draft.status === "staged");
+    if (!nextDraft) {
+      return;
+    }
+
+    updatePendingPdfDrafts((current) =>
+      current.map((draft) => (draft.id === nextDraft.id ? { ...draft, status: "uploading" } : draft)),
+    );
+    setMaterialError(null);
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        if (nextDraft.file.size > PDF_FILE_MAX_BYTES) {
+          throw new Error("PDF exceeds the 15 MB limit.");
+        }
+
+        const material = await uploadPdfMaterial(sessionId, nextDraft.file);
+        if (cancelled) {
+          return;
+        }
+
+        setSourceMaterials((current) => upsertSourceMaterial(current, material));
+        updatePendingPdfDrafts((current) => current.filter((draft) => draft.id !== nextDraft.id));
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setMaterialError(error instanceof Error ? error.message : "Failed to upload PDF.");
+        updatePendingPdfDrafts((current) =>
+          current.map((draft) => (draft.id === nextDraft.id ? { ...draft, status: "error" } : draft)),
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession?.user?.id, isAuthPending, isSessionHydrated, pendingPdfDrafts, sessionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1125,6 +1238,24 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       return;
     }
 
+    if (!isPendingPdfDraftsHydrated) {
+      return;
+    }
+
+    if (pendingPdfDrafts.some((draft) => draft.status === "uploading")) {
+      return;
+    }
+
+    if (pendingPdfDrafts.some((draft) => draft.status === "staged")) {
+      if (isAuthPending) {
+        return;
+      }
+
+      if (authSession?.user?.id) {
+        return;
+      }
+    }
+
     autoStartConsumedRef.current = autoStartKey;
     setGoal(routeState.goal);
     setPlannerInput("");
@@ -1152,11 +1283,15 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       goalOverride: routeState.goal,
     });
   }, [
+    authSession?.user?.id,
     autoStartKey,
     routeState.autoStartAction,
     routeState.goal,
     router,
     course,
+    isAuthPending,
+    isPendingPdfDraftsHydrated,
+    pendingPdfDrafts,
     routeState.courseOwnerUsername,
     routeState.courseSlug,
     sessionId,
@@ -1822,37 +1957,47 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       return;
     }
 
-    if (!authSession?.user?.id) {
-      setMaterialError("Sign in to attach PDFs to a course.");
-      return;
-    }
-
-    const pdfFiles = files.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+    const pdfFiles = files.filter(isPdfFile);
     if (pdfFiles.length === 0) {
       setMaterialError("Only PDF files are supported.");
       return;
     }
 
-    setIsUploadingMaterial(true);
+    setMaterialError(null);
+    updatePendingPdfDrafts((current) => [...current, ...createPendingPdfAttachmentDrafts(pdfFiles).map(createPendingPdfDraft)]);
+  }
+
+  async function handleRemoveAttachedMaterial(materialId: string) {
+    if (!sessionId) {
+      return;
+    }
+
+    const material = sourceMaterialsRef.current.find((entry) => entry.id === materialId) ?? null;
+    setRemovingMaterialIds((current) => (current.includes(materialId) ? current : [...current, materialId]));
     setMaterialError(null);
 
-    let nextMaterials = sourceMaterialsRef.current;
-
     try {
-      for (const file of pdfFiles) {
-        if (file.size > PDF_FILE_MAX_BYTES) {
-          throw new Error("PDF exceeds the 15 MB limit.");
-        }
-
-        const material = await uploadPdfMaterial(sessionId, file);
-        nextMaterials = upsertSourceMaterial(nextMaterials, material);
-      }
-
-      setSourceMaterials(nextMaterials);
+      await deleteSourceMaterial(sessionId, materialId, material?.storageKey);
+      setSourceMaterials((current) => current.filter((material) => material.id !== materialId));
     } catch (error) {
-      setMaterialError(error instanceof Error ? error.message : "Failed to upload PDF.");
+      setMaterialError(error instanceof Error ? error.message : "Failed to remove PDF.");
     } finally {
-      setIsUploadingMaterial(false);
+      setRemovingMaterialIds((current) => current.filter((id) => id !== materialId));
+    }
+  }
+
+  function handleRemovePendingPdfDraft(draftId: string) {
+    updatePendingPdfDrafts((current) => current.filter((draft) => draft.id !== draftId));
+  }
+
+  function handleRemoveComposerAttachment(attachmentId: string) {
+    if (attachmentId.startsWith("material:")) {
+      void handleRemoveAttachedMaterial(attachmentId.slice("material:".length));
+      return;
+    }
+
+    if (attachmentId.startsWith("draft:")) {
+      handleRemovePendingPdfDraft(attachmentId.slice("draft:".length));
     }
   }
 
@@ -3471,6 +3616,23 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     Boolean(sessionId) &&
     !streamedGeneratedBlock &&
     (renderedGeneratedBlock?.type === "lesson" || renderedGeneratedBlock?.type === "quiz");
+  const pdfSourceMaterials = sourceMaterials.filter((material) => material.kind === "pdf");
+  const urlSourceMaterials = sourceMaterials.filter((material) => material.kind === "url");
+  const composerAttachments = [
+    ...pdfSourceMaterials.map((material) => ({
+      id: `material:${material.id}`,
+      title: material.fileName ?? material.title,
+      removable: !removingMaterialIds.includes(material.id),
+      uploading: removingMaterialIds.includes(material.id),
+    })),
+    ...pendingPdfDrafts.map((draft) => ({
+      id: `draft:${draft.id}`,
+      title: draft.file.name,
+      removable: draft.status !== "uploading",
+      uploading: draft.status === "uploading",
+      invalid: draft.status === "error",
+    })),
+  ];
   const workspaceStyle = isDesktop
     ? {
         ...styles.workspace,
@@ -3778,11 +3940,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             ) : null}
 	          </div>
 
-          {sourceMaterials.length > 0 || materialError ? (
+          {urlSourceMaterials.length > 0 || materialError ? (
             <div style={styles.materialsPanelWrap}>
               <SourceMaterialsPanel
                 title="Course Materials"
-                materials={sourceMaterials}
+                materials={urlSourceMaterials}
+                emptyText="No attached links yet."
                 errorText={materialError}
                 resolveFileHref={(material) =>
                   sessionId && material.kind === "pdf"
@@ -3825,12 +3988,14 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
                 void toggleLiveConnection();
               }}
               generateLabel={isPlanning ? "Stop" : "Send"}
-              showAttach={Boolean(authSession?.user?.id && sessionId)}
+              showAttach={Boolean(sessionId)}
               onAttachPdfFiles={(files) => {
                 void handleAttachPdfFiles(files);
               }}
+              onRemoveAttachment={handleRemoveComposerAttachment}
+              attachments={composerAttachments}
               attachBusy={isUploadingMaterial}
-              attachDisabled={isUploadingMaterial || !sessionId}
+              attachDisabled={!sessionId}
               generateBusy={isPlanning}
               generateIconOnly
               liveLabel={getLiveActionLabel(liveStatus)}
@@ -4018,6 +4183,17 @@ function base64ToBytes(base64: string) {
   }
 
   return bytes;
+}
+
+function isPdfFile(file: File) {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function createPendingPdfDraft(draft: PendingPdfAttachmentDraft): PendingPdfDraft {
+  return {
+    ...draft,
+    status: "staged",
+  };
 }
 
 const styles: Record<string, CSSProperties> = {

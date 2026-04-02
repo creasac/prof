@@ -75,9 +75,10 @@ import { generateReasoningContent, generateReasoningContentStream } from "./reas
 import { isReasoningEnabled } from "./providers/reasoning/index.js";
 import { isSearchEnabled } from "./providers/search/index.js";
 import { importUrl } from "./providers/search/url-import.js";
-import { getR2Object, isR2Configured, putR2Object } from "./providers/storage/r2.js";
+import { deleteR2Object, getR2Object, isR2Configured, putR2Object } from "./providers/storage/r2.js";
 import { extractPdfText, parseUploadedPdf } from "./source-material-upload.js";
 import {
+  buildPdfStoragePrefix,
   buildPdfStorageKey,
   createPdfSourceMaterial,
   createUrlSourceMaterial,
@@ -440,6 +441,70 @@ app.post("/api/learn/sessions/:sessionId/materials/pdf", async (req, res, next) 
         material,
       }),
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/learn/sessions/:sessionId/materials/:materialId", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const input = z
+      .object({
+        storageKey: z.string().min(1).max(400).optional(),
+      })
+      .parse(req.body ?? {});
+    const sessionRecord = await readLearnSessionForUser(authSession.user.id, req.params.sessionId);
+    const material = sessionRecord
+      ? findSourceMaterial(sessionRecord.snapshot.sourceMaterials ?? [], req.params.materialId)
+      : null;
+    const expectedStoragePrefix = `${buildPdfStoragePrefix({
+      userId: authSession.user.id,
+      sessionId: req.params.sessionId,
+    })}/`;
+    const fallbackStorageKey =
+      input.storageKey && input.storageKey.startsWith(expectedStoragePrefix) ? input.storageKey : null;
+
+    if (!sessionRecord && !fallbackStorageKey) {
+      res.status(404).json({
+        error: `Learn session ${req.params.sessionId} was not found.`,
+      });
+      return;
+    }
+
+    if (!material && !fallbackStorageKey) {
+      res.status(404).json({
+        error: "Attached material not found.",
+      });
+      return;
+    }
+
+    const storageKeyToDelete =
+      material?.kind === "pdf" && material.storageKey ? material.storageKey : fallbackStorageKey;
+
+    if (storageKeyToDelete && isR2Configured()) {
+      await deleteR2Object(storageKeyToDelete);
+    }
+
+    if (sessionRecord) {
+      const nextSnapshot = learnSessionSnapshotSchema.parse({
+        ...sessionRecord.snapshot,
+        sourceMaterials: (sessionRecord.snapshot.sourceMaterials ?? []).filter((entry) => entry.id !== req.params.materialId),
+      });
+
+      await saveLearnSessionForUser(
+        authSession.user.id,
+        getSessionUsername(authSession),
+        req.params.sessionId,
+        nextSnapshot,
+      );
+    }
+
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

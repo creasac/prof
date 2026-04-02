@@ -41,3 +41,21 @@ export async function uploadPdfMaterial(sessionId: string, file: File): Promise<
   const payload = sourceMaterialResponseSchema.parse(await response.json());
   return payload.material;
 }
+
+export async function deleteSourceMaterial(sessionId: string, materialId: string, storageKey?: string) {
+  const response = await fetchApi(
+    `/api/learn/sessions/${encodeURIComponent(sessionId)}/materials/${encodeURIComponent(materialId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ storageKey }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to remove material.");
+  }
+}

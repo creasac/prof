@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 import { env } from "../../env.js";
 
@@ -44,6 +44,15 @@ export async function getR2Object(key: string) {
     contentLength: response.ContentLength ?? undefined,
     contentDisposition: response.ContentDisposition ?? undefined,
   };
+}
+
+export async function deleteR2Object(key: string) {
+  await getR2Client().send(
+    new DeleteObjectCommand({
+      Bucket: env.R2_BUCKET,
+      Key: key,
+    }),
+  );
 }
 
 function getR2Client() {

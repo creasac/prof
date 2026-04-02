@@ -136,7 +136,14 @@ export function buildPdfStorageKey(options: {
   fileName: string;
 }) {
   const safeName = sanitizePathSegment(options.fileName || "document.pdf");
-  return `users/${sanitizePathSegment(options.userId)}/sessions/${sanitizePathSegment(options.sessionId)}/materials/${sanitizePathSegment(options.materialId)}/${safeName}`;
+  return `${buildPdfStoragePrefix(options)}/${sanitizePathSegment(options.materialId)}/${safeName}`;
+}
+
+export function buildPdfStoragePrefix(options: {
+  userId: string;
+  sessionId: string;
+}) {
+  return `users/${sanitizePathSegment(options.userId)}/sessions/${sanitizePathSegment(options.sessionId)}/materials`;
 }
 
 function normalizeSourceMaterials(materials: SourceMaterial[]) {

@@ -5,22 +5,28 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, type CSSProperties } from "react";
 
 import { PromptComposer } from "../components/PromptComposer";
+import {
+  createPendingPdfAttachmentDrafts,
+  writePendingPdfAttachments,
+  type PendingPdfAttachmentDraft,
+} from "../lib/pending-pdf-attachments";
 import { buildLearnHref, createLearnSessionId } from "../lib/learn-route";
 
 export default function HomePage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [draftSessionId] = useState(() => createLearnSessionId());
   const [goal, setGoal] = useState("");
   const [pendingAction, setPendingAction] = useState<"generate" | "live" | null>(null);
+  const [pendingPdfDrafts, setPendingPdfDrafts] = useState<PendingPdfAttachmentDraft[]>([]);
 
   function launch(action: "generate" | "live") {
     setPendingAction(action);
-    const sessionId = createLearnSessionId();
 
     startTransition(() => {
       router.push(
         buildLearnHref({
-          sessionId,
+          sessionId: draftSessionId,
           courseOwnerUsername: null,
           courseSlug: null,
           goal,
@@ -28,6 +34,23 @@ export default function HomePage() {
         }),
       );
     });
+  }
+
+  function handleAttachPdfFiles(files: File[]) {
+    const pdfFiles = files.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+    if (pdfFiles.length === 0) {
+      return;
+    }
+
+    const nextDrafts = [...pendingPdfDrafts, ...createPendingPdfAttachmentDrafts(pdfFiles)];
+    setPendingPdfDrafts(nextDrafts);
+    writePendingPdfAttachments(draftSessionId, nextDrafts);
+  }
+
+  function handleRemoveAttachment(attachmentId: string) {
+    const nextDrafts = pendingPdfDrafts.filter((draft) => draft.id !== attachmentId);
+    setPendingPdfDrafts(nextDrafts);
+    writePendingPdfAttachments(draftSessionId, nextDrafts);
   }
 
   return (
@@ -43,10 +66,18 @@ export default function HomePage() {
           onGoalChange={setGoal}
           onGenerate={() => launch("generate")}
           onLive={() => launch("live")}
+          onAttachPdfFiles={handleAttachPdfFiles}
+          onRemoveAttachment={handleRemoveAttachment}
+          attachments={pendingPdfDrafts.map((draft) => ({
+            id: draft.id,
+            title: draft.file.name,
+          }))}
           generateLabel={isPending && pendingAction === "generate" ? "Sending..." : "Send"}
           generateBusy={isPending && pendingAction === "generate"}
           generateIconOnly
           liveLabel={isPending && pendingAction === "live" ? "..." : "Live"}
+          showAttach
+          attachDisabled={isPending}
           generateDisabled={isPending}
           liveDisabled={isPending}
           placeholder="What do you want to learn?"
@@ -72,25 +103,25 @@ const styles: Record<string, CSSProperties> = {
     maxWidth: "720px",
     display: "flex",
     flexDirection: "column",
-    gap: "18px",
+    gap: "22px",
     alignItems: "center",
   },
   hero: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    gap: "6px",
-    marginTop: "-96px",
+    gap: "8px",
+    marginTop: "-124px",
   },
   logo: {
-    width: "76px",
+    width: "88px",
     height: "auto",
   },
   tagline: {
     margin: 0,
-    fontSize: "clamp(1.26rem, 2.5vw, 1.64rem)",
+    fontSize: "clamp(1.38rem, 2.8vw, 1.82rem)",
     lineHeight: 1,
-    fontWeight: 500,
+    fontWeight: 550,
     color: "#5e493d",
     letterSpacing: "0.01em",
     textAlign: "center",
