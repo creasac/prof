@@ -11,6 +11,11 @@ const courseCoverBriefSchema = z.object({
   altText: z.string().min(1).max(280),
 });
 
+const rawCourseCoverBriefSchema = z.object({
+  prompt: z.string().optional(),
+  altText: z.string().optional(),
+});
+
 export async function generateCourseCover(options: { course: PersistedCourse }) {
   const client = getReasoningClient();
   const briefSchema = zodToJsonSchema(courseCoverBriefSchema, {
@@ -29,7 +34,7 @@ export async function generateCourseCover(options: { course: PersistedCourse }) 
     throw new Error("Course cover prompt model returned an empty response.");
   }
 
-  const brief = courseCoverBriefSchema.parse(JSON.parse(briefResponse.text));
+  const brief = normalizeCourseCoverBrief(JSON.parse(briefResponse.text), options.course);
   const imageResponse = await client.models.generateContent({
     model: env.COURSE_COVER_IMAGE_MODEL,
     contents: brief.prompt,
@@ -58,12 +63,24 @@ export function buildCourseCoverStorageKey(courseId: string) {
   return `courses/${courseId}/cover/current`;
 }
 
+function normalizeCourseCoverBrief(raw: unknown, course: PersistedCourse) {
+  const parsed = rawCourseCoverBriefSchema.parse(asRecord(raw));
+  const fallbackAltText = buildFallbackAltText(course);
+  const brief = courseCoverBriefSchema.parse({
+    prompt: clampString(parsed.prompt, 2000, buildFallbackImagePrompt(course)),
+    altText: clampString(parsed.altText, 280, fallbackAltText),
+  });
+
+  return brief;
+}
+
 function buildCourseCoverBriefPrompt(course: PersistedCourse) {
   return [
     "You create concise image briefs for course cover art.",
     "Return only JSON matching the provided schema.",
     "Write one polished prompt for a minimal, premium, modern course cover image.",
     "The image will sit behind the course title in the UI, so the image itself must contain no text.",
+    "altText must be a single sentence under 280 characters.",
     "Do not include letters, words, numbers, logos, screenshots, diagrams, browser chrome, or UI panels.",
     "Favor abstraction, symbolism, clean geometry, restrained palettes, and generous negative space.",
     "Prefer 1 to 3 visual motifs implied by the course topics instead of a literal collage.",
@@ -124,4 +141,41 @@ function extractImagePart(response: GenerateContentResponse) {
   }
 
   return null;
+}
+
+function buildFallbackAltText(course: PersistedCourse) {
+  return clampString(
+    `${course.title} course cover with abstract premium illustration and no text.`,
+    280,
+    "Course cover with abstract premium illustration and no text.",
+  );
+}
+
+function buildFallbackImagePrompt(course: PersistedCourse) {
+  return clampString(
+    [
+      `Minimal premium abstract course cover for ${course.title}.`,
+      "No text, no logos, no UI.",
+      `Ultrawide ${courseCoverAspectRatio} banner, restrained palette, clean geometry, generous negative space.`,
+    ].join(" "),
+    2000,
+    "Minimal premium abstract ultrawide course cover, no text, restrained palette, clean geometry.",
+  );
+}
+
+function asRecord(value: unknown) {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function clampString(value: unknown, maxLength: number, fallback: string) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return fallback;
+  }
+
+  return normalized.slice(0, maxLength);
 }
