@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 
-import { Icon, IconText } from "./TutorUi";
+import { Icon, IconText, type IconName } from "./TutorUi";
 
 export type PromptComposerAttachment = {
   id: string;
@@ -34,6 +34,7 @@ type PromptComposerProps = {
   liveDisabled?: boolean;
   muteDisabled?: boolean;
   muteActive?: boolean;
+  liveActive?: boolean;
   showMute?: boolean;
   placeholder?: string;
   rows?: number;
@@ -62,6 +63,7 @@ export function PromptComposer({
   liveDisabled = false,
   muteDisabled = false,
   muteActive = false,
+  liveActive = false,
   showMute = false,
   placeholder = "What do you want to learn?",
   rows = 1,
@@ -70,8 +72,9 @@ export function PromptComposer({
   const isHome = variant === "home";
   const hasText = goal.trim().length > 0;
   const showGenerateAction = generateBusy || hasText;
-  const generateIcon = generateBusy ? "stop" : "send";
-  const actionIconName = showGenerateAction ? generateIcon : "waveform";
+  const generateIcon: IconName = generateBusy ? "stop" : "send";
+  const actionIconName: IconName = showGenerateAction ? generateIcon : liveActive ? "stopCircle" : "waveform";
+  const muteIconName: IconName = muteActive ? "mic" : "micOff";
   const actionIconSize = isHome ? 21 : 20;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -212,7 +215,7 @@ export function PromptComposer({
             aria-label={muteLabel}
             title={muteLabel}
           >
-            <Icon name="mic" size={19} />
+            <Icon name={muteIconName} size={19} />
           </button>
         ) : null}
 

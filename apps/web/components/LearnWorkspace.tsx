@@ -267,7 +267,7 @@ function getLiveStatusIcon(status: string) {
 function getLiveActionLabel(status: LiveStatus) {
   switch (status) {
     case "Connected":
-      return "Close";
+      return "Stop live mode";
     case "Connecting":
       return "...";
     case "Error":
@@ -783,12 +783,14 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const [plannerError, setPlannerError] = useState<string | null>(null);
   const [materialError, setMaterialError] = useState<string | null>(null);
   const [topicError, setTopicError] = useState<string | null>(null);
+  const [isTextResponsePending, setIsTextResponsePending] = useState(false);
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("Disconnected");
   const [liveError, setLiveError] = useState<string | null>(null);
   const [usageAlert, setUsageAlert] = useState<UsageAlert | null>(null);
   const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
   const [liveInputDraft, setLiveInputDraft] = useState("");
   const [liveOutputDraft, setLiveOutputDraft] = useState("");
+  const [isLiveThinking, setIsLiveThinking] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -831,7 +833,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const sourceMaterialsRef = useRef<SourceMaterial[]>([]);
   const pendingPdfDraftsRef = useRef<PendingPdfDraft[]>([]);
   const liveMessagesRef = useRef<ChatMessage[]>([]);
-  const lastLiveStatusRef = useRef<{ text: string; at: number } | null>(null);
   const liveAudioStatusRef = useRef(false);
   const liveToolInFlightRef = useRef(false);
   const liveContextDigestRef = useRef<string>("");
@@ -1172,7 +1173,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         (routeGoalSeedRef.current.sessionId === sessionId ? routeGoalSeedRef.current.goal : "");
 
       const nextChatMessages = (snapshot?.chatMessages ?? []).map((message) => ensureSessionMessage(message, "chat"));
-      const nextLiveMessages = (snapshot?.liveMessages ?? []).map((message) => ensureSessionMessage(message, "live"));
+      const nextLiveMessages = (snapshot?.liveMessages ?? [])
+        .map((message) => ensureSessionMessage(message, "live"))
+        .filter((message) => !isLiveStatusMessage(message));
+      const nextLiveOutputDraftRaw = snapshot?.liveOutputDraft ?? snapshot?.outputTranscript ?? "";
+      const nextLiveOutputDraft = nextLiveOutputDraftRaw.startsWith(LIVE_STATUS_PREFIX) ? "" : nextLiveOutputDraftRaw;
       const nextSnapshot: LearnSessionSnapshot = snapshot
         ? {
             ...snapshot,
@@ -1188,7 +1193,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             chatMessages: nextChatMessages,
             liveMessages: nextLiveMessages,
             liveInputDraft: snapshot.liveInputDraft ?? snapshot.inputTranscript ?? "",
-            liveOutputDraft: snapshot.liveOutputDraft ?? snapshot.outputTranscript ?? "",
+            liveOutputDraft: nextLiveOutputDraft,
             leftPanePercent: clampPanePercent(snapshot.leftPanePercent),
             learnPanelCollapsed: snapshot.learnPanelCollapsed ?? false,
             liveGoal: snapshot.liveGoal,
@@ -1261,7 +1266,9 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       lastLiveUserMessageRef.current =
         [...nextLiveMessages].reverse().find((message) => message.role === "user")?.content ?? null;
       setLiveInputDraft(nextSnapshot.liveInputDraft ?? "");
-      setLiveOutputDraft(nextSnapshot.liveOutputDraft ?? "");
+      setLiveOutputDraft(nextLiveOutputDraft);
+      setIsTextResponsePending(false);
+      setIsLiveThinking(false);
       setLeftPanePercent(nextSnapshot.leftPanePercent);
       setIsLearnPanelCollapsed(nextSnapshot.learnPanelCollapsed ?? false);
       liveGoalRef.current = nextSnapshot.liveGoal;
@@ -1557,7 +1564,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }, [authSession?.user?.id, isAuthPending, isHistoryOpen]);
 
   useEffect(() => {
-    if (chatAutoScrollLockedRef.current) {
+    const shouldForceAutoScroll =
+      Boolean(liveInputDraft) || Boolean(liveOutputDraft) || isTextResponsePending || isLiveThinking;
+
+    if (!shouldForceAutoScroll && chatAutoScrollLockedRef.current) {
       return;
     }
 
@@ -1567,11 +1577,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     requestAnimationFrame(() => {
-      if (!chatAutoScrollLockedRef.current) {
+      if (shouldForceAutoScroll || !chatAutoScrollLockedRef.current) {
         scrollChatToBottom();
       }
     });
-  }, [chatMessages, liveMessages, liveInputDraft, liveOutputDraft, liveError, goal]);
+  }, [chatMessages, liveMessages, liveInputDraft, liveOutputDraft, liveError, goal, isTextResponsePending, isLiveThinking]);
 
   async function loadSessionHistory() {
     setIsHistoryLoading(true);
@@ -1780,7 +1790,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   async function submitPlannerRequest(options: {
     goalOverride?: string;
     inputOverride?: string;
-  } = {}) {
+  } = {}): Promise<
+    | { result: "clarification"; clarification: PlanningClarification }
+    | { result: "plan"; plan: CoursePlan }
+    | null
+  > {
     if (planningAbortRef.current) {
       planningAbortRef.current.abort();
     }
@@ -1797,7 +1811,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
     if (!requestGoal) {
       setPlannerError("Describe what you want to learn first.");
-      return;
+      return null;
     }
 
     if (mode !== "draft" && !nextInput) {
@@ -1806,7 +1820,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           ? "Answer the follow-up question before updating the plan."
           : "Describe how you want the plan to change.",
       );
-      return;
+      return null;
     }
 
     setPlannerInput("");
@@ -1824,6 +1838,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setQuizResultsByTopic({});
     setTopicArtifacts({});
     setIsLearnPanelCollapsed(false);
+
+    let finalResult:
+      | { result: "clarification"; clarification: PlanningClarification }
+      | { result: "plan"; plan: CoursePlan }
+      | null = null;
 
     try {
       const useWebSearch = await getAutomaticSearchEnabled();
@@ -1882,6 +1901,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             setSelectedTopicId((current) => current ?? event.topic.id);
             break;
           case "clarification":
+            finalResult = {
+              result: "clarification",
+              clarification: event.clarification,
+            };
             setPlanClarification(event.clarification);
             setPlannerInput("");
             break;
@@ -1890,6 +1913,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             setPlanSources(event.payload.sources);
 
             if (event.payload.result === "clarification") {
+              finalResult = {
+                result: "clarification",
+                clarification: event.payload.clarification,
+              };
               setPlanClarification(event.payload.clarification);
               setPlannerInput("");
               setStreamedRequestType(null);
@@ -1899,6 +1926,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             }
 
             const finalPlan = event.payload.plan;
+            finalResult = {
+              result: "plan",
+              plan: finalPlan,
+            };
             setPlan(finalPlan);
             setPlanClarification(null);
             setSelectedTopicId((current) => pickSelectedTopicId(finalPlan, current));
@@ -1927,7 +1958,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         }
 
         if (controller.signal.aborted) {
-          return;
+          return null;
         }
       }
 
@@ -1941,13 +1972,14 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       }
 
       clearUsageAlert("text");
+      return finalResult;
     } catch (error) {
       if (
         controller.signal.aborted ||
         (error instanceof DOMException && error.name === "AbortError") ||
         (error instanceof Error && error.name === "AbortError")
       ) {
-        return;
+        return null;
       }
       setStreamedRequestType(null);
       setStreamedPlanTitle("");
@@ -1958,6 +1990,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         fallback: "Planning request failed.",
         setter: setPlannerError,
       });
+      return null;
     } finally {
       if (planningAbortRef.current === controller) {
         planningAbortRef.current = null;
@@ -2105,6 +2138,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setChatMessages((prev) => [...prev, userMessage]);
     setPlannerInput("");
     setPlannerError(null);
+    setIsTextResponsePending(true);
 
     try {
       const useWebSearch = await getAutomaticSearchEnabled();
@@ -2176,6 +2210,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         fallback: "Chat request failed.",
         setter: setPlannerError,
       });
+    } finally {
+      setIsTextResponsePending(false);
     }
   }
 
@@ -2521,31 +2557,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     return liveMessagesRef.current.filter((message) => !isLiveStatusMessage(message)).slice(-limit);
   }
 
-  function pushLiveStatus(status: string) {
-    const trimmed = status.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    const text = trimmed.startsWith(LIVE_STATUS_PREFIX) ? trimmed : `${LIVE_STATUS_PREFIX} ${trimmed}`;
-    const last = lastLiveStatusRef.current;
-    const now = Date.now();
-    if (last && last.text === text && now - last.at < 2500) {
-      return;
-    }
-
-    lastLiveStatusRef.current = { text, at: now };
-    setLiveMessages((prev) => [
-      ...prev,
-      createSessionMessage({
-        role: "assistant",
-        content: text,
-        channel: "live",
-        kind: "status",
-      }),
-    ]);
-  }
-
   function derivePreferredBlockType(message: string): TutorBlockType | undefined {
     const lower = message.toLowerCase();
     if (lower.includes("quiz")) {
@@ -2755,6 +2766,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
     if (data.content && options.appendToLiveMessages) {
       const content = data.content;
+      setIsLiveThinking(false);
       setLiveMessages((prev) => [
         ...prev,
         createSessionMessage({
@@ -2799,15 +2811,18 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     message: string;
     intent: LiveReasoningIntent;
     appendToLiveMessages?: boolean;
-  }): Promise<{ kind: "plan" } | { kind: "reasoning"; data: ReasoningChatResponse }> {
+  }): Promise<
+    | { kind: "plan"; data: { result: "clarification"; clarification: PlanningClarification } | { result: "plan"; plan: CoursePlan } | null }
+    | { kind: "reasoning"; data: ReasoningChatResponse }
+  > {
     const trimmed = options.message.trim();
     if (shouldHandlePlan(options.intent)) {
       const fallbackGoal = goalRef.current || trimmed;
-      await submitPlannerRequest({
+      const plannerResult = await submitPlannerRequest({
         goalOverride: fallbackGoal,
         inputOverride: trimmed,
       });
-      return { kind: "plan" };
+      return { kind: "plan", data: plannerResult };
     }
 
     const data = await performReasoningRequest({
@@ -2823,6 +2838,18 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     return { kind: "reasoning", data };
   }
 
+  function buildLivePlannerMessage(result: { result: "clarification"; clarification: PlanningClarification } | { result: "plan"; plan: CoursePlan } | null) {
+    if (!result) {
+      return "I updated the learning plan in the Learn panel.";
+    }
+
+    if (result.result === "clarification") {
+      return result.clarification.prompt;
+    }
+
+    return `I updated the learning plan in the Learn panel. ${result.plan.summary}`;
+  }
+
   async function sendLiveTextMessage(message: string) {
     const trimmed = message.trim();
     if (!trimmed) {
@@ -2835,33 +2862,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       setGoal(trimmed);
     }
 
-    let appConfig: AppConfig | null = null;
-    try {
-      appConfig = configRef.current ?? (await loadConfig());
-    } catch (error) {
-      setPlannerError(error instanceof Error ? error.message : "Failed to load app config.");
-      return;
-    }
-
-    if (!appConfig.voice.enabled) {
-      await submitChatRequest(trimmed);
-      return;
-    }
-
-    if (!liveSessionRef.current) {
-      const connected = await connectLiveSession({
-        goalOverride: trimmed,
-        preserveTranscript: true,
-        skipSeed: true,
-      });
-      if (!connected) {
-        await submitChatRequest(trimmed);
-        return;
-      }
-    }
-
     const session = liveSessionRef.current;
-    if (!session) {
+    if (!session || liveStatus !== "Connected") {
       setLiveError("Voice session is not connected.");
       return;
     }
@@ -2877,6 +2879,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     ]);
 
     session.sendUserMessage(trimmed);
+    setIsLiveThinking(true);
   }
 
   function commitLiveInputDraft() {
@@ -2886,6 +2889,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     lastLiveUserMessageRef.current = draft;
+    setIsLiveThinking(true);
     setLiveMessages((prev) => [
       ...prev,
       createSessionMessage({
@@ -2905,12 +2909,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     if (draft.startsWith(LIVE_STATUS_PREFIX)) {
-      pushLiveStatus(draft);
       liveOutputDraftRef.current = "";
       setLiveOutputDraft("");
       return;
     }
 
+    setIsLiveThinking(false);
     setLiveMessages((prev) => [
       ...prev,
       createSessionMessage({
@@ -2932,86 +2936,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
   }
 
-  function formatUpdateTarget(target?: ReasoningUpdateTarget) {
-    switch (target) {
-      case "topic_list":
-        return "the topic list";
-      case "topic":
-        return "the current topic";
-      case "lesson":
-        return "the lesson";
-      case "quiz":
-        return "the quiz";
-      case "flashcards":
-        return "the flashcards";
-      case "plan":
-        return "the course plan";
-      case "all":
-        return "the full course";
-      default:
-        return "the course content";
-    }
-  }
-
-  function formatPreferredBlockType(type?: TutorBlockType) {
-    switch (type) {
-      case "lesson":
-        return "lesson";
-      case "quiz":
-        return "quiz";
-      case "flashcards":
-        return "flashcards";
-      case "essay_prompt":
-        return "essay prompt";
-      case "follow_up_question":
-        return "follow-up question";
-      default:
-        return "content";
-    }
-  }
-
-  function buildToolStartStatus(intent: LiveReasoningIntent, preferredType?: TutorBlockType) {
-    if (shouldHandlePlan(intent)) {
-      if (intent.requestType === "update_content") {
-        return "Updating your course plan now.";
-      }
-      return "Designing your course plan now.";
-    }
-
-    if (intent.requestType === "update_content") {
-      return `Updating ${formatUpdateTarget(intent.updateTarget)} now.`;
-    }
-    if (intent.requestType === "general_query") {
-      return "Answering based on the current course materials.";
-    }
-    if (intent.requestType === "new_content") {
-      const label = formatPreferredBlockType(preferredType ?? intent.preferredBlockType);
-      return `Designing your ${label} now.`;
-    }
-    return "Routing your request to the course designer.";
-  }
-
-  function describeReasoningOutcome(data: { responseType?: string; plan?: unknown; artifact?: unknown }) {
-    const hasPlan = Boolean(data.plan);
-    const hasArtifact = Boolean(data.artifact);
-    if (data.responseType === "chat") {
-      return "Answer ready.";
-    }
-    if (hasPlan && hasArtifact) {
-      return "Updated the plan and course content in the Learn panel.";
-    }
-    if (hasPlan) {
-      return "Updated the course plan in the Learn panel.";
-    }
-    if (hasArtifact) {
-      if (data.responseType === "artifact_update") {
-        return "Updated course content in the Learn panel.";
-      }
-      return "New course content is ready in the Learn panel.";
-    }
-    return "Reasoning response received.";
-  }
-
   async function handleLiveToolCall(toolCall: VoiceToolCallPayload, session: VoiceSessionHandle) {
     const functionCalls = toolCall.functionCalls ?? [];
     if (functionCalls.length === 0) {
@@ -3019,10 +2943,15 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     liveToolInFlightRef.current = true;
+    setIsLiveThinking(true);
     if (playerRef.current) {
       playerRef.current.stop();
     }
     liveAudioStatusRef.current = false;
+    if (liveOutputDraftRef.current.trim()) {
+      liveOutputDraftRef.current = "";
+      setLiveOutputDraft("");
+    }
 
     const responses: Array<{
       id?: string;
@@ -3072,36 +3001,42 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           continue;
         }
 
-        pushLiveStatus(buildToolStartStatus(intent, preferredTypeHint));
-
         try {
           const result = await performLiveAction({
             message,
             intent,
             appendToLiveMessages: true,
           });
+          const plannerMessage = result.kind === "plan" ? buildLivePlannerMessage(result.data) : null;
 
-          if (result.kind === "reasoning") {
-            pushLiveStatus(describeReasoningOutcome(result.data));
-          } else {
-            const needsClarification = Boolean(planClarificationRef.current);
-            pushLiveStatus(
-              needsClarification
-                ? "Need one clarification in the Learn panel."
-                : "Updated the course plan in the Learn panel.",
-            );
+          if (plannerMessage) {
+            setIsLiveThinking(false);
+            setLiveMessages((prev) => [
+              ...prev,
+              createSessionMessage({
+                role: "assistant",
+                content: plannerMessage,
+                channel: "live",
+              }),
+            ]);
           }
 
           responses.push({
             id: call.id,
             name: call.name,
             response: {
-              output: result.kind === "reasoning" ? result.data : { result: "plan_updated" },
+              output:
+                result.kind === "reasoning"
+                  ? result.data
+                  : {
+                      result: result.data?.result ?? "plan",
+                      content: plannerMessage ?? "I updated the learning plan in the Learn panel.",
+                    },
             },
           });
         } catch (error) {
           setLiveError(error instanceof Error ? error.message : "Reasoning tool request failed.");
-          pushLiveStatus("Course designer failed to respond. Please try again.");
+          setIsLiveThinking(false);
           responses.push({
             id: call.id,
             name: call.name,
@@ -3143,11 +3078,13 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       appConfig = configRef.current ?? (await loadConfig());
     } catch (error) {
       setLiveError(error instanceof Error ? error.message : "Failed to load app config.");
+      setIsLiveThinking(false);
       return false;
     }
 
     if (!appConfig.voice.enabled) {
       setLiveError("Voice tutoring is not configured on the server yet.");
+      setIsLiveThinking(false);
       return false;
     }
 
@@ -3274,6 +3211,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
               if (liveInputDraftRef.current.trim()) {
                 commitLiveInputDraft();
               }
+              setIsLiveThinking(false);
               const merged = mergeTranscriptText(liveOutputDraftRef.current, serverContent.outputTranscription.text);
               liveOutputDraftRef.current = merged;
               setLiveOutputDraft(merged);
@@ -3288,7 +3226,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
                   }
                   if (!liveAudioStatusRef.current && !liveOutputDraftRef.current.trim()) {
                     liveAudioStatusRef.current = true;
-                    pushLiveStatus("Speaking response.");
                   }
                   if (playerRef.current) {
                     void playerRef.current.play(part.inlineData.data);
@@ -3303,6 +3240,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
               }
               commitLiveOutputDraft();
               liveAudioStatusRef.current = false;
+              setIsLiveThinking(false);
             }
           },
           onError: (error) => {
@@ -3311,6 +3249,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             }
             setLiveStatus("Error");
             setLiveError(error.message);
+            setIsLiveThinking(false);
             if (!readySettled) {
               readySettled = true;
               rejectReady?.(error);
@@ -3324,6 +3263,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             liveSessionRef.current = null;
             void stopMicrophone();
 
+            setIsLiveThinking(false);
             setLiveStatus("Disconnected");
             if (!disconnectRequestedRef.current) {
               const rawCloseMessage = details
@@ -3368,6 +3308,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       return true;
     } catch (error) {
       setLiveStatus("Disconnected");
+      setIsLiveThinking(false);
       handleUsageAwareError({
         channel: "live",
         error,
@@ -3406,6 +3347,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       lastLiveUserMessageRef.current = null;
     }
 
+    setIsLiveThinking(false);
     setLiveError(null);
     setLiveStatus("Disconnected");
   }
@@ -3691,6 +3633,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       : null;
   const collectionLabel = getPlanCollectionLabel(plan?.requestType ?? streamedRequestType);
   const learnTopicCount = streamedTopics.length > 0 ? streamedTopics.length : getPlanTopicCount(plan);
+  const visibleLiveMessages = liveMessages.filter((message) => !isLiveStatusMessage(message));
+  const showThinkingIndicator = (isTextResponsePending || isLiveThinking) && !liveOutputDraft;
   const showMuteControl = liveStatus === "Connected";
   const renderedGeneratedBlock = streamedGeneratedBlock ? buildStreamedTopicBlock(streamedGeneratedBlock) : generatedBlock;
   const renderedBlockSources = streamedGeneratedBlock ? [] : blockSources;
@@ -3988,7 +3932,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
               </div>
             ))}
 
-            {liveMessages.map((msg, idx) => (
+            {visibleLiveMessages.map((msg, idx) => (
               <div
                 key={msg.id ?? `live-${idx}`}
                 style={{
@@ -4006,6 +3950,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
               </div>
             ) : null}
 
+            {showThinkingIndicator ? <p style={styles.chatThinkingText}>thinking...</p> : null}
+
             {liveOutputDraft ? (
               <div style={{ ...styles.messageBubble, ...styles.assistantBubble }}>
                 <p style={styles.messageText}>{liveOutputDraft.replace(/\n/g, " ")}</p>
@@ -4014,9 +3960,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
             {!goal &&
             chatMessages.length === 0 &&
-            liveMessages.length === 0 &&
+            visibleLiveMessages.length === 0 &&
             !liveInputDraft &&
-            !liveOutputDraft ? (
+            !liveOutputDraft &&
+            !showThinkingIndicator ? (
               <div style={styles.emptyState}>
                 <p style={styles.emptyTitle}>Chat messages will appear here.</p>
                 <p style={styles.emptyText}>
@@ -4065,7 +4012,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
                   return;
                 }
 
-                if (liveSessionRef.current || liveStatus === "Connected") {
+                if (liveStatus === "Connected" && liveSessionRef.current) {
                   void sendLiveTextMessage(inputSnapshot);
                   return;
                 }
@@ -4091,6 +4038,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
               generateBusy={isPlanning}
               generateIconOnly
               liveLabel={getLiveActionLabel(liveStatus)}
+              liveActive={liveStatus === "Connected"}
               showMute={showMuteControl}
               muteLabel={isMicActive ? "Mute" : "Unmute"}
               muteActive={isMicActive}
@@ -4606,6 +4554,13 @@ const styles: Record<string, CSSProperties> = {
     color: "var(--warm-muted)",
     fontSize: "0.94rem",
     lineHeight: 1.6,
+  },
+  chatThinkingText: {
+    margin: "4px 0 2px",
+    paddingLeft: "2px",
+    color: "var(--muted)",
+    fontSize: "0.86rem",
+    lineHeight: 1.5,
   },
   generatedSection: {
     display: "flex",
