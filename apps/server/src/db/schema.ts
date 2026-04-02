@@ -131,6 +131,31 @@ export const course = pgTable(
   }),
 );
 
+export const usageAccessGrant = pgTable(
+  "usage_access_grant",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    campaignKey: text("campaign_key").notNull(),
+    scope: text("scope").notNull().default("all"),
+    redeemedAt: timestamp("redeemed_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    startsAt: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    campaignNotBlank: check("usage_access_grant_campaign_not_blank", sql`char_length(btrim(${table.campaignKey})) > 0`),
+    scopeValid: check("usage_access_grant_scope_valid", sql`${table.scope} in ('all', 'live', 'text')`),
+    windowValid: check("usage_access_grant_window_valid", sql`${table.expiresAt} > ${table.startsAt}`),
+    userCampaignUnique: uniqueIndex("usage_access_grant_user_campaign_unique").on(table.userId, table.campaignKey),
+    userExpiresAtIndex: index("usage_access_grant_user_expires_at_idx").on(table.userId, table.expiresAt),
+    userRevokedAtIndex: index("usage_access_grant_user_revoked_at_idx").on(table.userId, table.revokedAt),
+  }),
+);
+
 export const usageEvent = pgTable(
   "usage_event",
   {
@@ -156,6 +181,7 @@ export const schema = {
   verification,
   learnSession,
   course,
+  usageAccessGrant,
   usageEvent,
 };
 

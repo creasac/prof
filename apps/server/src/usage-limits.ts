@@ -10,6 +10,7 @@ import type { Request, Response } from "express";
 import { getAuthSession } from "./auth.js";
 import { db, isDatabaseEnabled } from "./db/client.js";
 import { usageEvent } from "./db/schema.js";
+import { hasActiveUnlimitedAccess } from "./usage-access.js";
 
 type UsageKind = "live" | "text";
 type UsageActorScope = "guest" | "user";
@@ -169,6 +170,11 @@ export function getRequestUsageChannel(req: Request) {
 
 export async function enforceUsageLimit(req: Request, res: Response, kind: UsageKind) {
   const actor = await resolveUsageActor(req);
+
+  if (actor.scope === "user" && actor.userId && isDatabaseEnabled && (await hasActiveUnlimitedAccess(actor.userId, kind))) {
+    return true;
+  }
+
   const allowed = isDatabaseEnabled ? await consumeStoredUsage(actor, kind) : consumeInMemoryUsage(actor, kind);
 
   if (allowed) {

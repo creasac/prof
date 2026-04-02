@@ -611,6 +611,26 @@ export const lessonQuizResponseSchema = z.object({
   model: z.string().min(1),
 });
 
+export const accountUnlimitedAccessStatusSchema = z.object({
+  hasUnlimitedAccess: z.boolean(),
+  canRedeem: z.boolean(),
+  campaignIsActive: z.boolean(),
+  campaignStartsAt: z.string().min(1),
+  campaignEndsAt: z.string().min(1),
+  accessStartsAt: z.string().min(1).nullable(),
+  accessExpiresAt: z.string().min(1).nullable(),
+  redeemedAt: z.string().min(1).nullable(),
+});
+
+export const redeemUnlimitedAccessCodeRequestSchema = z.object({
+  code: z.string().min(1).max(200),
+});
+
+export const redeemUnlimitedAccessCodeResponseSchema = z.object({
+  status: accountUnlimitedAccessStatusSchema,
+  message: z.string().min(1).max(200),
+});
+
 export const appConfigSchema = z.object({
   voice: z.object({
     enabled: z.boolean(),
@@ -628,6 +648,7 @@ export const voiceSessionResponseSchema = z.object({
   expiresAt: z.string().optional(),
 });
 
+export type AccountUnlimitedAccessStatus = z.infer<typeof accountUnlimitedAccessStatusSchema>;
 export type AppConfig = z.infer<typeof appConfigSchema>;
 export type Flashcard = z.infer<typeof flashcardSchema>;
 export type FlashcardsBlock = z.infer<typeof flashcardsBlockSchema>;
@@ -640,6 +661,8 @@ export type LessonBlueprint = z.infer<typeof lessonBlueprintSchema>;
 export type LessonPlan = z.infer<typeof lessonPlanSchema>;
 export type LessonQuizRequest = z.infer<typeof lessonQuizRequestSchema>;
 export type LessonQuizResponse = z.infer<typeof lessonQuizResponseSchema>;
+export type RedeemUnlimitedAccessCodeRequest = z.infer<typeof redeemUnlimitedAccessCodeRequestSchema>;
+export type RedeemUnlimitedAccessCodeResponse = z.infer<typeof redeemUnlimitedAccessCodeResponseSchema>;
 export type CourseRef = z.infer<typeof courseRefSchema>;
 export type CourseSnapshot = z.infer<typeof courseSnapshotSchema>;
 export type CourseCoverImage = z.infer<typeof courseCoverImageSchema>;

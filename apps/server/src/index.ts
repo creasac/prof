@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import {
+  accountUnlimitedAccessStatusSchema,
   attachUrlRequestSchema,
   flashcardSchema,
   appConfigSchema,
@@ -20,6 +21,8 @@ import {
   reasoningTopicBlockStreamEventSchema,
   planningModelResultSchema,
   quizQuestionSchema,
+  redeemUnlimitedAccessCodeRequestSchema,
+  redeemUnlimitedAccessCodeResponseSchema,
   reasoningBlockRequestSchema,
   reasoningBlockResponseSchema,
   reasoningPlanRequestSchema,
@@ -88,6 +91,11 @@ import { normalizeReasoningChatResponse } from "./reasoning-chat.js";
 import { normalizeTutorBlock } from "./tutor.js";
 import { createVoiceSession, isVoiceEnabled } from "./providers/voice/index.js";
 import { enforceUsageLimit, getRequestUsageChannel } from "./usage-limits.js";
+import {
+  getAccountUnlimitedAccessStatus,
+  redeemUnlimitedAccessCode,
+  RedeemUnlimitedAccessCodeError,
+} from "./usage-access.js";
 
 const app = express();
 
@@ -146,6 +154,42 @@ app.get("/api/config", (_req, res) => {
       },
     }),
   );
+});
+
+app.get("/api/account/unlimited-access", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const status = await getAccountUnlimitedAccessStatus(authSession.user.id);
+    res.json(accountUnlimitedAccessStatusSchema.parse(status));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/account/unlimited-access/redeem", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const input = redeemUnlimitedAccessCodeRequestSchema.parse(req.body);
+    const result = await redeemUnlimitedAccessCode(authSession.user.id, input.code);
+    res.json(redeemUnlimitedAccessCodeResponseSchema.parse(result));
+  } catch (error) {
+    if (error instanceof RedeemUnlimitedAccessCodeError) {
+      res.status(error.status).json({
+        error: error.message,
+      });
+      return;
+    }
+
+    next(error);
+  }
 });
 
 app.get("/api/learn/sessions", async (req, res, next) => {
