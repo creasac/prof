@@ -191,14 +191,8 @@ Required GitHub repository secrets:
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 
-For `CLOUDFLARE_API_TOKEN`, use Cloudflare's `Edit Cloudflare Workers` token template or an equivalent custom token that includes:
-
-- `Workers Scripts Write`
-- `Workers Routes Write`
-- `Workers KV Storage Write`
-- `Workers R2 Storage Write`
-- `Account Settings Read`
-- `User Details Read`
-- `User Memberships Read`
+For `CLOUDFLARE_API_TOKEN`, Cloudflare's `Edit Cloudflare Workers` token template is the simplest option.
 
 Set `CLOUDFLARE_ACCOUNT_ID` to the 32-character account ID for the target Cloudflare account. If you are already using R2 in the same account, this will usually match `R2_ACCOUNT_ID`.
+
+This workflow passes `CLOUDFLARE_ACCOUNT_ID` directly to `cloudflare/wrangler-action@v3`. That avoids Wrangler trying to discover the account through the user memberships API, which is the most common cause of `A request to the Cloudflare API (/memberships) failed` errors when using narrower custom API tokens in CI.
