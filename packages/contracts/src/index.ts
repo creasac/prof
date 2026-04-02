@@ -253,6 +253,7 @@ export const courseSnapshotSchema = z.object({
 export const learnSessionSnapshotSchema = z.object({
   courseId: z.string().nullable().default(null),
   course: courseRefSchema.nullable().default(null),
+  courseSyncEnabled: z.boolean().optional(),
   goal: z.string(),
   plannerInput: z.string(),
   plan: coursePlanSchema.nullable(),

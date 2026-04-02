@@ -45,6 +45,7 @@ import { authHandler, getAuthSession, isAuthEnabled } from "./auth.js";
 import { isDatabaseEnabled } from "./db/client.js";
 import { env } from "./env.js";
 import {
+  deleteCourseForOwner,
   forkCourseForUser,
   listPublicCourses,
   readCourseCoverForViewer,
@@ -720,6 +721,50 @@ app.patch("/api/courses/:username/:courseSlug", async (req, res, next) => {
     }
 
     res.json(persistedCourseSchema.parse(updatedCourse));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/courses/:username/:courseSlug", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const username = getSessionUsername(authSession);
+    const requestedUsername = req.params.username.trim().toLowerCase();
+
+    if (!username || username !== requestedUsername) {
+      res.status(404).json({
+        error: "Course not found.",
+      });
+      return;
+    }
+
+    const deletedCourse = await deleteCourseForOwner({
+      userId: authSession.user.id,
+      username,
+      courseSlug: req.params.courseSlug,
+    });
+
+    if (!deletedCourse) {
+      res.status(404).json({
+        error: "Course not found.",
+      });
+      return;
+    }
+
+    if (deletedCourse.coverImageKey && isR2Configured()) {
+      try {
+        await deleteR2Object(deletedCourse.coverImageKey);
+      } catch (error) {
+        console.error(`Failed to delete course cover for ${deletedCourse.courseId}.`, error);
+      }
+    }
+
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import {
   courseCoverImageSchema,
   courseRefSchema,
@@ -364,6 +364,10 @@ async function backfillLegacyCoursesForUser(userId: string) {
       continue;
     }
 
+    if (parsedSnapshot.courseSyncEnabled === false) {
+      continue;
+    }
+
     const currentCourseId = parsedSnapshot.course?.courseId ?? record.courseId ?? null;
     if (currentCourseId) {
       const existingCourse = await readCourseLineageById(currentCourseId);
@@ -404,6 +408,11 @@ export async function syncCourseForUser(options: {
   snapshot: LearnSessionSnapshot;
 }) {
   const { userId, username, snapshot } = options;
+
+  if (snapshot.courseSyncEnabled === false) {
+    return null;
+  }
+
   const normalizedSnapshot = deriveCourseSnapshot(snapshot);
 
   if (!normalizedSnapshot || !username) {
@@ -673,6 +682,53 @@ export async function updateCourseVisibilityForOwner(options: {
     ownerUsername: username,
     courseSlug,
   });
+}
+
+export async function deleteCourseForOwner(options: {
+  userId: string;
+  username: string | null;
+  courseSlug: string;
+}) {
+  const { userId, username, courseSlug } = options;
+  if (!username) {
+    return null;
+  }
+
+  const courseRecord = await readCourseLineageByOwnerAndSlug(username, courseSlug);
+  if (!courseRecord || courseRecord.ownerId !== userId) {
+    return null;
+  }
+
+  const db = requireDb();
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(learnSession)
+      .set({
+        courseId: null,
+        snapshot: sql<LearnSessionSnapshot>`jsonb_set(
+          jsonb_set(${learnSession.snapshot} - 'course', '{courseId}', 'null'::jsonb, true),
+          '{courseSyncEnabled}',
+          'false'::jsonb,
+          true
+        )`,
+        updatedAt: now,
+      })
+      .where(
+        or(
+          eq(learnSession.courseId, courseRecord.id),
+          sql`${learnSession.snapshot} -> 'course' ->> 'courseId' = ${courseRecord.id}`,
+        ),
+      );
+
+    await tx.delete(course).where(eq(course.id, courseRecord.id));
+  });
+
+  return {
+    courseId: courseRecord.id,
+    coverImageKey: courseRecord.coverImageKey,
+  };
 }
 
 export async function readCourseCoverForViewer(options: {

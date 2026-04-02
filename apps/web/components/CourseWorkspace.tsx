@@ -6,8 +6,10 @@ import { useEffect, useMemo, useState, useTransition, type CSSProperties } from 
 import { useRouter } from "next/navigation";
 
 import { authClient } from "../lib/auth-client";
+import { notifyCourseLibraryUpdated } from "../lib/app-shell-events";
 import {
   buildCourseCoverUrl,
+  deleteRemoteCourse,
   forkRemoteCourse,
   generateRemoteCourseCover,
   loadRemoteCourse,
@@ -16,6 +18,7 @@ import {
 import { buildCourseHref, buildCourseQuizHref } from "../lib/course-route";
 import { collectCourseQuizzes, findTopicInPlan, pickSelectedTopicId, resolveCourseBlock } from "../lib/course-view";
 import { buildLearnHref, createLearnSessionId } from "../lib/learn-route";
+import { buildProfileHref } from "../lib/profile-route";
 import { buildCourseMaterialFileHref } from "../lib/source-materials";
 import { PlannerView } from "./PlannerUi";
 import { SourceMaterialsPanel } from "./SourceMaterialsPanel";
@@ -48,7 +51,7 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [coverRefreshKey, setCoverRefreshKey] = useState<string>("");
   const [isPending, startTransition] = useTransition();
-  const [pendingAction, setPendingAction] = useState<"copy" | "cover" | "public" | "private" | null>(null);
+  const [pendingAction, setPendingAction] = useState<"copy" | "cover" | "public" | "private" | "delete" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,6 +199,32 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
     }
   }
 
+  async function deleteCourse() {
+    if (!course || !course.isOwner) {
+      return;
+    }
+
+    const confirmed = window.confirm("Delete this course? This can't be undone.");
+    if (!confirmed) {
+      return;
+    }
+
+    const ownerUsername = course.ownerUsername;
+    const courseSlug = course.courseSlug;
+
+    setPendingAction("delete");
+    setActionError(null);
+
+    try {
+      await deleteRemoteCourse(ownerUsername, courseSlug);
+      notifyCourseLibraryUpdated();
+      router.replace(buildProfileHref(ownerUsername));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to delete the course.");
+      setPendingAction(null);
+    }
+  }
+
   if (isLoading) {
     return null;
   }
@@ -282,6 +311,19 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
                     : course.visibility === "public"
                       ? "Make private"
                       : "Make public"}
+                </button>
+              ) : null}
+
+              {authSession?.user?.id && course.isOwner ? (
+                <button
+                  type="button"
+                  style={styles.dangerButton}
+                  onClick={() => {
+                    void deleteCourse();
+                  }}
+                  disabled={pendingAction !== null}
+                >
+                  {pendingAction === "delete" ? "Deleting..." : "Delete course"}
                 </button>
               ) : null}
 
@@ -504,6 +546,15 @@ const styles: Record<string, CSSProperties> = {
     padding: "8px 12px",
     background: "var(--surface-2)",
     color: "var(--text-soft)",
+    fontSize: "0.86rem",
+    cursor: "pointer",
+  },
+  dangerButton: {
+    borderRadius: "999px",
+    border: "1px solid color-mix(in srgb, var(--danger) 28%, var(--border))",
+    padding: "8px 12px",
+    background: "color-mix(in srgb, var(--danger) 8%, var(--surface-2))",
+    color: "var(--danger)",
     fontSize: "0.86rem",
     cursor: "pointer",
   },

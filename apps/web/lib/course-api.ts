@@ -115,3 +115,15 @@ export async function updateRemoteCourseVisibility(
 
   return persistedCourseSchema.parse(await response.json());
 }
+
+export async function deleteRemoteCourse(username: string, courseSlug: string): Promise<void> {
+  const pathname = `/api/courses/${encodeURIComponent(username)}/${encodeURIComponent(courseSlug)}`;
+  const response = await fetchApi(pathname, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to delete the course.");
+  }
+}
