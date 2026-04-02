@@ -46,7 +46,7 @@ const rawEnvSchema = z.object({
   GOOGLE_GENAI_USE_VERTEXAI: z.enum(["true", "false"]).default("false"),
   GOOGLE_CLOUD_PROJECT: z.string().optional(),
   GOOGLE_CLOUD_LOCATION: z.string().default("global"),
-  REASONING_MODEL: z.string().default("gemini-2.5-flash"),
+  REASONING_MODEL: z.string().default("gemini-3.1-pro-preview"),
   COURSE_COVER_PROMPT_MODEL: z.string().default("gemini-2.5-flash"),
   COURSE_COVER_IMAGE_MODEL: z.string().default("gemini-2.5-flash-image"),
 });

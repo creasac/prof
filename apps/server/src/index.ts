@@ -35,6 +35,7 @@ import {
   voiceSessionResponseSchema,
   type Flashcard,
   type QuizQuestion,
+  type ReasoningChatRequest,
   type TutorBlockType,
 } from "@prof/contracts";
 import { zodToJsonSchema } from "zod-to-json-schema";
@@ -75,7 +76,7 @@ import {
   findPlanTopic,
 } from "./prompts.js";
 import { generateReasoningContent, generateReasoningContentStream } from "./reasoning-runtime.js";
-import { isReasoningEnabled } from "./providers/reasoning/index.js";
+import { getReasoningModelName, isReasoningEnabled } from "./providers/reasoning/index.js";
 import { isSearchEnabled } from "./providers/search/index.js";
 import { importUrl } from "./providers/search/url-import.js";
 import { deleteR2Object, getR2Object, isR2Configured, putR2Object } from "./providers/storage/r2.js";
@@ -106,6 +107,54 @@ const corsOrigin = env.NODE_ENV === "development" ? true : allowedOrigins.length
 const reasoningChatModelSchema = zodToJsonSchema(reasoningChatResponseSchema.omit({ sources: true }), {
   $refStrategy: "none",
 });
+
+function isReasoningSchemaArgumentError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message.includes('"status":"INVALID_ARGUMENT"') ||
+    error.message.includes("too many states for serving") ||
+    error.message.includes("Request contains an invalid argument")
+  );
+}
+
+async function generateReasoningChatContent(input: ReasoningChatRequest) {
+  const baseOptions = {
+    prompt: buildChatPrompt(input),
+    searchQuery: input.message,
+    useWebSearch: input.useWebSearch,
+    groundingTexts: [input.message, ...input.chatHistory.map((message: { content: string }) => message.content)],
+    sourceMaterials: input.sourceMaterials,
+    emptyResponseError: "Reasoning model returned an empty response.",
+  };
+
+  try {
+    return await generateReasoningContent({
+      ...baseOptions,
+      config: {
+        responseMimeType: "application/json",
+        responseJsonSchema: reasoningChatModelSchema,
+      },
+    });
+  } catch (error) {
+    if (!isReasoningSchemaArgumentError(error)) {
+      throw error;
+    }
+
+    console.warn("Reasoning chat schema rejected by model; retrying without responseJsonSchema.", {
+      model: getReasoningModelName(),
+    });
+
+    return generateReasoningContent({
+      ...baseOptions,
+      config: {
+        responseMimeType: "application/json",
+      },
+    });
+  }
+}
 
 app.use(
   cors({
@@ -1188,18 +1237,7 @@ app.post("/api/reasoning/chat", async (req, res, next) => {
 
     const input = requestParse.data;
 
-    const response = await generateReasoningContent({
-      prompt: buildChatPrompt(input),
-      searchQuery: input.message,
-      useWebSearch: input.useWebSearch,
-      groundingTexts: [input.message, ...input.chatHistory.map((message) => message.content)],
-      sourceMaterials: input.sourceMaterials,
-      config: {
-        responseMimeType: "application/json",
-        responseJsonSchema: reasoningChatModelSchema,
-      },
-      emptyResponseError: "Reasoning model returned an empty response.",
-    });
+    const response = await generateReasoningChatContent(input);
 
     const parsed = normalizeReasoningChatResponse(JSON.parse(response.text), {
       requestType: input.requestType,

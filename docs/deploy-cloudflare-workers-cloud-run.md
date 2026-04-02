@@ -101,6 +101,7 @@ Other backend vars depend on which features you want enabled:
 - `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET`
 - `GEMINI_API_KEY` or Vertex config
+- `REASONING_MODEL=gemini-3.1-pro-preview`
 - `ELEVENLABS_AGENT_ID`
 - `ELEVENLABS_API_KEY`
 - `GOOGLE_CLIENT_ID`

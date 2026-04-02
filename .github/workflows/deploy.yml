@@ -74,6 +74,7 @@ jobs:
             "DB_NAME",
             "AUTH_SECRET",
             "DB_PASS",
+            "REASONING_MODEL",
           ];
 
           for (const key of required) {

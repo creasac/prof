@@ -244,7 +244,7 @@ export function buildChatPrompt(input: ReasoningChatRequest) {
   return [
     "You are Prof, an adaptive tutor.",
     "Analyze the user's message and determine the appropriate response.",
-    "You must return ONLY a single JSON object matching the provided response schema.",
+    "You must return ONLY a single JSON object following the requested JSON shape.",
     "",
     "Response type rules:",
     "- If the user is asking a question, seeking explanation, or wants to chat: responseType = 'chat', targetPanel = 'chat'",
