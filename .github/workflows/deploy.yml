@@ -1,0 +1,174 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Build Cloud Run env file
+        env:
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+          CLOUD_SQL_INSTANCE_CONNECTION_NAME: ${{ vars.CLOUD_SQL_INSTANCE_CONNECTION_NAME }}
+          DATABASE_SSL: ${{ vars.DATABASE_SSL }}
+          DB_USER: ${{ vars.DB_USER }}
+          DB_NAME: ${{ vars.DB_NAME }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          VOICE_PROVIDER: ${{ vars.VOICE_PROVIDER }}
+          SEARCH_PROVIDER: ${{ vars.SEARCH_PROVIDER }}
+          REASONING_PROVIDER: ${{ vars.REASONING_PROVIDER }}
+          URL2MD_API_BASE_URL: ${{ vars.URL2MD_API_BASE_URL }}
+          SOURCE_MATERIAL_MAX_COUNT: ${{ vars.SOURCE_MATERIAL_MAX_COUNT }}
+          SOURCE_MATERIAL_MAX_PROMPT_CHARS: ${{ vars.SOURCE_MATERIAL_MAX_PROMPT_CHARS }}
+          SOURCE_MATERIAL_MAX_EXCERPT_CHARS: ${{ vars.SOURCE_MATERIAL_MAX_EXCERPT_CHARS }}
+          PDF_UPLOAD_MAX_BYTES: ${{ vars.PDF_UPLOAD_MAX_BYTES }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          GOOGLE_GENAI_USE_VERTEXAI: ${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}
+          GOOGLE_CLOUD_PROJECT: ${{ vars.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: ${{ vars.GOOGLE_CLOUD_LOCATION }}
+          REASONING_MODEL: ${{ vars.REASONING_MODEL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          ELEVENLABS_AGENT_ID: ${{ secrets.ELEVENLABS_AGENT_ID }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const env = process.env;
+          const required = [
+            "FRONTEND_URL",
+            "CLOUD_SQL_INSTANCE_CONNECTION_NAME",
+            "DATABASE_SSL",
+            "DB_USER",
+            "DB_NAME",
+            "AUTH_SECRET",
+            "DB_PASS",
+          ];
+
+          for (const key of required) {
+            if (!env[key] || !env[key].trim()) {
+              throw new Error(`Missing required deployment value: ${key}`);
+            }
+          }
+
+          const output = {
+            NODE_ENV: "production",
+            WEB_ORIGIN: env.FRONTEND_URL,
+            AUTH_BASE_URL: env.FRONTEND_URL,
+            DATABASE_SSL: env.DATABASE_SSL,
+            DB_USER: env.DB_USER,
+            DB_PASS: env.DB_PASS,
+            DB_NAME: env.DB_NAME,
+            INSTANCE_CONNECTION_NAME: env.CLOUD_SQL_INSTANCE_CONNECTION_NAME,
+            AUTH_SECRET: env.AUTH_SECRET,
+          };
+
+          const optional = [
+            "GOOGLE_CLIENT_ID",
+            "GOOGLE_CLIENT_SECRET",
+            "VOICE_PROVIDER",
+            "SEARCH_PROVIDER",
+            "REASONING_PROVIDER",
+            "ELEVENLABS_AGENT_ID",
+            "ELEVENLABS_API_KEY",
+            "URL2MD_API_BASE_URL",
+            "SOURCE_MATERIAL_MAX_COUNT",
+            "SOURCE_MATERIAL_MAX_PROMPT_CHARS",
+            "SOURCE_MATERIAL_MAX_EXCERPT_CHARS",
+            "PDF_UPLOAD_MAX_BYTES",
+            "R2_ACCOUNT_ID",
+            "R2_ACCESS_KEY_ID",
+            "R2_SECRET_ACCESS_KEY",
+            "R2_BUCKET",
+            "GEMINI_API_KEY",
+            "GOOGLE_GENAI_USE_VERTEXAI",
+            "GOOGLE_CLOUD_PROJECT",
+            "GOOGLE_CLOUD_LOCATION",
+            "REASONING_MODEL",
+          ];
+
+          for (const key of optional) {
+            if (env[key] && env[key].trim()) {
+              output[key] = env[key];
+            }
+          }
+
+          const yaml =
+            Object.entries(output)
+              .map(([key, value]) => `${key}: ${JSON.stringify(String(value))}`)
+              .join("\n") + "\n";
+
+          fs.writeFileSync("/tmp/cloudrun-env.yaml", yaml);
+          NODE
+
+      - name: Deploy backend
+        run: |
+          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --source . \
+            --region "${{ vars.GCP_REGION }}" \
+            --allow-unauthenticated \
+            --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE_CONNECTION_NAME }}" \
+            --env-vars-file /tmp/cloudrun-env.yaml \
+            --quiet
+
+      - name: Remove Cloud Run env file
+        if: always()
+        run: rm -f /tmp/cloudrun-env.yaml
+
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    needs:
+      - deploy-backend
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Cloudflare worker
+        run: npm run build:cf:web
+
+      - name: Deploy frontend
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: apps/web
+          command: deploy --var API_PROXY_TARGET=${{ vars.API_PROXY_TARGET }}

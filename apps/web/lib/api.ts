@@ -2,10 +2,12 @@ import { PROF_GUEST_USAGE_HEADER } from "@prof/contracts";
 
 import { getGuestUsageId } from "./guest-usage";
 
-const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+const DEFAULT_API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:8080");
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+const NORMALIZED_API_BASE_URL = DEFAULT_API_BASE_URL.replace(/\/$/, "");
 
-export const AUTH_API_BASE_URL = `${DEFAULT_API_BASE_URL.replace(/\/$/, "")}/api/auth`;
+export const AUTH_API_BASE_URL = NORMALIZED_API_BASE_URL ? `${NORMALIZED_API_BASE_URL}/api/auth` : "/api/auth";
 export const USAGE_LIMIT_ERROR_CODE = "usage_limit_reached";
 
 type ApiErrorPayload = {
@@ -15,7 +17,7 @@ type ApiErrorPayload = {
 
 export function getApiBaseUrl() {
   if (typeof window === "undefined") {
-    return DEFAULT_API_BASE_URL.replace(/\/$/, "");
+    return NORMALIZED_API_BASE_URL;
   }
 
   try {
@@ -29,7 +31,7 @@ export function getApiBaseUrl() {
     configuredUrl.hostname = currentHostname;
     return configuredUrl.toString().replace(/\/$/, "");
   } catch {
-    return DEFAULT_API_BASE_URL.replace(/\/$/, "");
+    return NORMALIZED_API_BASE_URL;
   }
 }
 
