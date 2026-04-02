@@ -150,12 +150,12 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: "clamp(1.5rem, 4vw, 2.6rem)",
     lineHeight: 1,
-    color: "#2c1c14",
+    color: "var(--text-soft)",
     letterSpacing: "-0.02em",
   },
   subtitle: {
     margin: 0,
-    color: "#6a5447",
+    color: "var(--muted)",
     fontSize: "0.96rem",
     lineHeight: 1.5,
   },
@@ -165,10 +165,10 @@ const styles: Record<string, CSSProperties> = {
     gap: "16px",
   },
   card: {
-    border: "1px solid rgba(94, 73, 61, 0.12)",
+    border: "1px solid var(--border)",
     borderRadius: "18px",
-    background: "rgba(255, 252, 247, 0.88)",
-    boxShadow: "0 14px 34px rgba(93, 70, 51, 0.08)",
+    background: "var(--surface-1)",
+    boxShadow: "0 14px 34px rgba(15, 23, 42, 0.06)",
     padding: "10px",
     display: "flex",
     flexDirection: "column",
@@ -179,9 +179,9 @@ const styles: Record<string, CSSProperties> = {
   placeholder: {
     borderRadius: "12px",
     aspectRatio: courseCoverAspectRatioCss,
-    background:
-      "linear-gradient(135deg, rgba(94, 73, 61, 0.1), rgba(191, 91, 44, 0.12)), repeating-linear-gradient(135deg, rgba(94, 73, 61, 0.06), rgba(94, 73, 61, 0.06) 12px, rgba(255, 255, 255, 0) 12px, rgba(255, 255, 255, 0) 24px)",
-    color: "#6c5648",
+    background: "var(--surface-muted)",
+    border: "1px dashed var(--border-strong)",
+    color: "var(--muted)",
     display: "grid",
     placeItems: "center",
     fontSize: "0.86rem",
@@ -202,7 +202,7 @@ const styles: Record<string, CSSProperties> = {
   },
   courseRoute: {
     margin: 0,
-    color: "#8a3715",
+    color: "var(--muted-strong)",
     fontSize: "0.74rem",
     fontWeight: 600,
     lineHeight: 1.4,
@@ -211,7 +211,7 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: "0.96rem",
     lineHeight: 1.28,
-    color: "#2c1c14",
+    color: "var(--text-soft)",
   },
   cardMeta: {
     margin: 0,
@@ -226,7 +226,7 @@ const styles: Record<string, CSSProperties> = {
   },
   errorText: {
     margin: 0,
-    color: "#a22e2e",
+    color: "var(--danger)",
     fontSize: "0.9rem",
   },
 };

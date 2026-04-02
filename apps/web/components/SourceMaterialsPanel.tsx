@@ -96,8 +96,8 @@ function truncateExcerpt(value: string) {
 const styles: Record<string, CSSProperties> = {
   panel: {
     borderRadius: "18px",
-    border: "1px solid rgba(72, 42, 22, 0.08)",
-    background: "rgba(255, 252, 247, 0.88)",
+    border: "1px solid var(--border)",
+    background: "var(--surface-1)",
     padding: "14px",
     display: "flex",
     flexDirection: "column",
@@ -111,7 +111,7 @@ const styles: Record<string, CSSProperties> = {
   },
   title: {
     margin: 0,
-    color: "#2c1c14",
+    color: "var(--text-soft)",
     fontSize: "0.98rem",
   },
   emptyText: {
@@ -121,7 +121,7 @@ const styles: Record<string, CSSProperties> = {
   },
   errorText: {
     margin: 0,
-    color: "#8a3715",
+    color: "var(--danger)",
     fontSize: "0.86rem",
   },
   list: {
@@ -130,8 +130,8 @@ const styles: Record<string, CSSProperties> = {
   },
   card: {
     borderRadius: "14px",
-    border: "1px solid rgba(72, 42, 22, 0.08)",
-    background: "rgba(255, 255, 255, 0.78)",
+    border: "1px solid var(--border)",
+    background: "var(--surface-2)",
     padding: "12px",
     display: "flex",
     flexDirection: "column",
@@ -145,22 +145,22 @@ const styles: Record<string, CSSProperties> = {
   },
   kindPill: {
     borderRadius: "999px",
-    border: "1px solid rgba(138, 55, 21, 0.12)",
-    background: "rgba(255, 247, 240, 0.92)",
-    color: "#8a3715",
+    border: "1px solid var(--border)",
+    background: "var(--surface-muted)",
+    color: "var(--muted-strong)",
     padding: "4px 8px",
     fontSize: "0.72rem",
     fontWeight: 600,
     letterSpacing: "0.04em",
   },
   link: {
-    color: "#8a3715",
+    color: "var(--text-soft)",
     fontSize: "0.86rem",
     textDecoration: "none",
   },
   cardTitle: {
     margin: 0,
-    color: "#2c1c14",
+    color: "var(--text-soft)",
     fontSize: "0.96rem",
   },
   metaText: {
@@ -171,7 +171,7 @@ const styles: Record<string, CSSProperties> = {
   },
   excerpt: {
     margin: 0,
-    color: "#4a3529",
+    color: "var(--text-soft)",
     fontSize: "0.86rem",
     lineHeight: 1.5,
   },

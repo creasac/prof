@@ -188,14 +188,14 @@ const styles: Record<string, CSSProperties> = {
   emptyState: {
     padding: "10px 12px 2px",
     borderRadius: "16px",
-    background: "rgba(255, 253, 248, 0.8)",
-    border: "1px solid rgba(72, 42, 22, 0.08)",
+    background: "var(--surface-muted)",
+    border: "1px solid var(--border)",
   },
   emptyTitle: {
     margin: 0,
     fontSize: "0.94rem",
     fontWeight: 600,
-    color: "#3f3028",
+    color: "var(--text-soft)",
   },
   emptyText: {
     margin: "8px 0 0",
@@ -206,14 +206,14 @@ const styles: Record<string, CSSProperties> = {
   noticeCard: {
     padding: "12px 14px",
     borderRadius: "16px",
-    border: "1px solid rgba(191, 91, 44, 0.16)",
-    background: "rgba(255, 248, 242, 0.84)",
+    border: "1px solid var(--border)",
+    background: "var(--surface-1)",
   },
   noticePrompt: {
     margin: 0,
     fontSize: "0.96rem",
     fontWeight: 600,
-    color: "#2c1c14",
+    color: "var(--text-soft)",
     lineHeight: 1.5,
   },
   noticeReason: {
@@ -227,13 +227,13 @@ const styles: Record<string, CSSProperties> = {
     paddingLeft: "20px",
     fontSize: "0.88rem",
     lineHeight: 1.6,
-    color: "#4b392f",
+    color: "var(--text-soft)",
   },
   loadingState: {
     borderRadius: "14px",
-    border: "1px dashed rgba(72, 42, 22, 0.14)",
+    border: "1px dashed var(--border-strong)",
     padding: "12px 14px",
-    background: "rgba(255, 253, 248, 0.5)",
+    background: "var(--surface-muted)",
   },
   loadingText: {
     margin: 0,
@@ -250,15 +250,15 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: "14px",
     borderWidth: "1px",
     borderStyle: "solid",
-    borderColor: "rgba(72, 42, 22, 0.08)",
-    background: "rgba(255, 253, 248, 0.72)",
+    borderColor: "var(--border)",
+    background: "var(--surface-1)",
     padding: "10px 12px",
     cursor: "pointer",
     fontSize: "0.92rem",
   },
   topicButtonSelected: {
-    borderColor: "rgba(191, 91, 44, 0.32)",
-    background: "rgba(255, 247, 239, 0.76)",
+    borderColor: "var(--border-strong)",
+    background: "var(--surface-subtle)",
   },
   topicRow: {
     display: "flex",
@@ -274,7 +274,7 @@ const styles: Record<string, CSSProperties> = {
     minWidth: 0,
   },
   topicTitle: {
-    color: "#2c1c14",
+    color: "var(--text-soft)",
     lineHeight: 1.4,
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -326,8 +326,8 @@ const styles: Record<string, CSSProperties> = {
   primaryButton: {
     border: "none",
     borderRadius: "999px",
-    background: "linear-gradient(135deg, #bf5b2c, #8a3715)",
-    color: "#fff7ef",
+    background: "var(--surface-contrast)",
+    color: "#fff",
     padding: "9px 14px",
     cursor: "pointer",
     fontWeight: 600,

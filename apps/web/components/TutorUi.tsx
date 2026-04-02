@@ -371,9 +371,9 @@ const styles: Record<string, CSSProperties> = {
   blockType: {
     padding: "5px 8px",
     borderRadius: "999px",
-    background: "rgba(255, 251, 246, 0.78)",
-    border: "1px solid rgba(191, 91, 44, 0.14)",
-    color: "#8a3715",
+    background: "var(--surface-2)",
+    border: "1px solid var(--border)",
+    color: "var(--muted-strong)",
     fontSize: "0.74rem",
     display: "inline-flex",
     alignItems: "center",
@@ -385,15 +385,15 @@ const styles: Record<string, CSSProperties> = {
   blockText: {
     fontSize: "1rem",
     lineHeight: 1.7,
-    color: "#3f3028",
+    color: "var(--text-soft)",
   },
   markdownBox: {
     whiteSpace: "pre-wrap",
     lineHeight: 1.7,
     padding: "12px",
     borderRadius: "12px",
-    background: "rgba(255, 251, 246, 0.62)",
-    border: "1px solid rgba(72, 42, 22, 0.08)",
+    background: "var(--surface-2)",
+    border: "1px solid var(--border)",
   },
   list: {
     paddingLeft: "20px",
@@ -407,8 +407,8 @@ const styles: Record<string, CSSProperties> = {
   flashcard: {
     borderRadius: "14px",
     padding: "12px",
-    background: "rgba(255, 251, 246, 0.58)",
-    border: "1px solid rgba(72, 42, 22, 0.08)",
+    background: "var(--surface-2)",
+    border: "1px solid var(--border)",
     fontSize: "0.92rem",
   },
   infoText: {

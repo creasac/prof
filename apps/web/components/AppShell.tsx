@@ -24,7 +24,7 @@ import { Icon } from "./TutorUi";
 
 const DESKTOP_MEDIA_QUERY = "(min-width: 960px)";
 const DRAWER_WIDTH = 296;
-const DRAWER_RAIL_WIDTH = 62;
+const DRAWER_RAIL_WIDTH = 52;
 const DESKTOP_CONTENT_OFFSET = DRAWER_WIDTH + 18;
 const DESKTOP_RAIL_OFFSET = DRAWER_RAIL_WIDTH + 16;
 const MOBILE_CONTENT_OFFSET = DRAWER_RAIL_WIDTH + 10;
@@ -79,6 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [isDesktop, setIsDesktop] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCoursesOpen, setIsCoursesOpen] = useState(true);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [sessionHistory, setSessionHistory] = useState<LearnSessionSummary[]>([]);
   const [isCoursesLoading, setIsCoursesLoading] = useState(false);
@@ -461,36 +462,44 @@ export function AppShell({ children }: { children: ReactNode }) {
               </section>
 
               <section style={styles.section}>
-                <div style={styles.sectionHeading}>
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryOpen((current) => !current)}
+                  style={styles.sectionToggle}
+                  aria-expanded={isHistoryOpen}
+                >
                   <span>history</span>
-                </div>
+                  <Icon name={isHistoryOpen ? "chevronUp" : "chevronDown"} size={16} />
+                </button>
 
-                <div style={styles.sectionBody}>
-                  {historyError ? <p style={styles.errorText}>{historyError}</p> : null}
-                  {isHistoryLoading ? (
-                    <p style={styles.emptyText}>Loading history...</p>
-                  ) : sessionHistory.length === 0 ? (
-                    <p style={styles.emptyText}>Start a session and it will appear here.</p>
-                  ) : (
-                    <div style={styles.historyList}>
-                      {sessionHistory.map((entry) => (
-                        <button
-                          key={entry.sessionId}
-                          type="button"
-                          onClick={() => openHistoryEntry(entry)}
-                          style={{
-                            ...styles.historyItem,
-                            ...(isHistoryEntryActive(entry) ? styles.historyItemActive : null),
-                          }}
-                          aria-current={isHistoryEntryActive(entry) ? "page" : undefined}
-                        >
-                          <span style={styles.historyItemTitle}>{entry.title}</span>
-                          <span style={styles.historyItemMeta}>{formatHistoryTimestamp(entry.updatedAt)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {isHistoryOpen ? (
+                  <div style={styles.sectionBody}>
+                    {historyError ? <p style={styles.errorText}>{historyError}</p> : null}
+                    {isHistoryLoading ? (
+                      <p style={styles.emptyText}>Loading history...</p>
+                    ) : sessionHistory.length === 0 ? (
+                      <p style={styles.emptyText}>Start a session and it will appear here.</p>
+                    ) : (
+                      <div style={styles.historyList}>
+                        {sessionHistory.map((entry) => (
+                          <button
+                            key={entry.sessionId}
+                            type="button"
+                            onClick={() => openHistoryEntry(entry)}
+                            style={{
+                              ...styles.historyItem,
+                              ...(isHistoryEntryActive(entry) ? styles.historyItemActive : null),
+                            }}
+                            aria-current={isHistoryEntryActive(entry) ? "page" : undefined}
+                          >
+                            <span style={styles.historyItemTitle}>{entry.title}</span>
+                            <span style={styles.historyItemMeta}>{formatHistoryTimestamp(entry.updatedAt)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </section>
             </div>
 
@@ -601,39 +610,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <Icon name="menu" size={20} />
             </button>
-
-            {isAuthenticated ? (
-              <Link
-                href={profileHref}
-                onClick={() => {
-                  setIsSignOutMenuOpen(false);
-                  closeDrawerIfNeeded();
-                }}
-                style={{
-                  ...styles.profileRailLink,
-                  ...(isProfilePage ? styles.profileRailLinkActive : null),
-                }}
-                aria-label={`${sessionUsername} profile`}
-                aria-current={isProfilePage ? "page" : undefined}
-              >
-                <AvatarBubble image={sessionUserImage} label={identityAvatarLabel} />
-              </Link>
-            ) : (
-              <Link
-                href={guestSignupHref}
-                onClick={() => {
-                  closeDrawerIfNeeded();
-                }}
-                style={{
-                  ...styles.profileRailLink,
-                  ...(isSignupPage ? styles.profileRailLinkActive : null),
-                }}
-                aria-label="Sign up"
-                aria-current={isSignupPage ? "page" : undefined}
-              >
-                <AvatarBubble image="" label="G" />
-              </Link>
-            )}
           </div>
         )}
       </aside>
@@ -653,6 +629,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 const styles: Record<string, CSSProperties> = {
   appFrame: {
     minHeight: "100vh",
+    background: "var(--bg)",
     transition: "padding-left 180ms ease",
   },
   backdrop: {
@@ -660,7 +637,7 @@ const styles: Record<string, CSSProperties> = {
     inset: 0,
     zIndex: 44,
     border: 0,
-    background: "rgba(33, 20, 13, 0.16)",
+    background: "rgba(17, 17, 20, 0.18)",
     padding: 0,
     cursor: "pointer",
   },
@@ -670,9 +647,9 @@ const styles: Record<string, CSSProperties> = {
     left: 0,
     bottom: 0,
     zIndex: 45,
-    borderRight: "1px solid rgba(94, 73, 61, 0.14)",
-    background: "rgba(255, 250, 245, 0.94)",
-    boxShadow: "0 20px 48px rgba(73, 35, 14, 0.12)",
+    borderRight: "1px solid var(--border)",
+    background: "rgba(250, 250, 247, 0.96)",
+    boxShadow: "var(--shadow)",
     backdropFilter: "blur(18px)",
     overflow: "hidden",
     transition: "width 180ms ease, box-shadow 180ms ease",
@@ -688,11 +665,11 @@ const styles: Record<string, CSSProperties> = {
   drawerRail: {
     width: "100%",
     flex: 1,
-    padding: "14px 10px 16px",
+    padding: "14px 8px 16px",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
   },
   drawerHeader: {
     padding: "14px 14px 10px",
@@ -700,7 +677,7 @@ const styles: Record<string, CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: "10px",
-    borderBottom: "1px solid rgba(94, 73, 61, 0.1)",
+    borderBottom: "1px solid var(--border)",
   },
   brandLink: {
     display: "inline-flex",
@@ -716,76 +693,72 @@ const styles: Record<string, CSSProperties> = {
     flex: 1,
     minHeight: 0,
     overflowY: "auto",
-    padding: "12px 10px 14px",
+    padding: "10px 8px 12px",
     display: "flex",
     flexDirection: "column",
-    gap: "14px",
+    gap: "12px",
   },
   drawerFooter: {
-    padding: "8px 10px 16px",
-    borderTop: "1px solid rgba(94, 73, 61, 0.1)",
+    padding: "6px 8px 12px",
+    borderTop: "1px solid var(--border)",
   },
   primaryActions: {
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
+    gap: "4px",
   },
   toggleButton: {
-    width: "36px",
-    height: "36px",
-    borderRadius: "10px",
-    border: "1px solid rgba(94, 73, 61, 0.12)",
-    background: "rgba(255, 255, 255, 0.9)",
+    width: "32px",
+    height: "32px",
+    borderRadius: "8px",
+    border: "1px solid transparent",
+    background: "transparent",
     color: "var(--text)",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     cursor: "pointer",
-    boxShadow: "0 10px 24px rgba(73, 35, 14, 0.08)",
   },
   learnButton: {
     width: "100%",
-    border: "1px solid rgba(138, 55, 21, 0.12)",
-    borderRadius: "16px",
-    background: "linear-gradient(135deg, rgba(255, 246, 239, 0.96), rgba(255, 255, 255, 0.94))",
+    border: "1px solid transparent",
+    borderRadius: "12px",
+    background: "transparent",
     color: "var(--text)",
-    padding: "11px 13px",
+    padding: "8px",
     display: "flex",
     alignItems: "center",
-    gap: "10px",
+    gap: "8px",
     cursor: "pointer",
     textAlign: "left",
-    fontSize: "0.94rem",
+    fontSize: "0.9rem",
     fontWeight: 600,
     letterSpacing: "-0.01em",
   },
   learnButtonActive: {
-    borderColor: "rgba(138, 55, 21, 0.2)",
-    background: "linear-gradient(135deg, rgba(255, 238, 226, 0.98), rgba(255, 248, 242, 0.96))",
+    borderColor: "transparent",
+    background: "var(--surface-subtle)",
     color: "var(--accent-strong)",
   },
   buttonIconWrap: {
-    width: "24px",
-    height: "24px",
-    borderRadius: "8px",
-    background: "rgba(191, 91, 44, 0.12)",
+    background: "transparent",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    color: "var(--accent-strong)",
+    color: "var(--muted-strong)",
     flexShrink: 0,
   },
   section: {
     display: "flex",
     flexDirection: "column",
-    gap: "8px",
+    gap: "6px",
   },
   sectionHeading: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "0 4px",
-    color: "#5e493d",
+    padding: "0 2px",
+    color: "var(--muted)",
     fontSize: "0.8rem",
     fontWeight: 700,
     letterSpacing: "0.06em",
@@ -795,11 +768,11 @@ const styles: Record<string, CSSProperties> = {
     width: "100%",
     border: 0,
     background: "transparent",
-    padding: "0 4px",
+    padding: "0 2px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    color: "#5e493d",
+    color: "var(--muted)",
     cursor: "pointer",
     fontSize: "0.8rem",
     fontWeight: 700,
@@ -809,54 +782,54 @@ const styles: Record<string, CSSProperties> = {
   sectionBody: {
     display: "flex",
     flexDirection: "column",
-    gap: "6px",
+    gap: "4px",
   },
   list: {
     display: "flex",
     flexDirection: "column",
-    gap: "4px",
+    gap: "2px",
   },
   listItem: {
     width: "100%",
     border: "1px solid transparent",
-    borderRadius: "12px",
+    borderRadius: "10px",
     background: "transparent",
     color: "var(--text)",
-    padding: "8px 10px",
+    padding: "6px 8px",
     cursor: "pointer",
     textAlign: "left",
-    fontSize: "0.9rem",
+    fontSize: "0.86rem",
     lineHeight: 1.35,
   },
   listItemActive: {
-    borderColor: "rgba(138, 55, 21, 0.14)",
-    background: "rgba(255, 244, 234, 0.94)",
+    borderColor: "transparent",
+    background: "var(--surface-subtle)",
     color: "var(--accent-strong)",
   },
   historyList: {
     display: "flex",
     flexDirection: "column",
-    gap: "6px",
+    gap: "2px",
   },
   historyItem: {
     width: "100%",
     border: "1px solid transparent",
-    borderRadius: "14px",
-    background: "rgba(255, 255, 255, 0.52)",
-    padding: "9px 10px",
+    borderRadius: "10px",
+    background: "transparent",
+    padding: "6px 8px",
     display: "flex",
     flexDirection: "column",
-    gap: "4px",
+    gap: "2px",
     cursor: "pointer",
     textAlign: "left",
   },
   historyItemActive: {
-    borderColor: "rgba(138, 55, 21, 0.14)",
-    background: "rgba(255, 244, 234, 0.94)",
+    borderColor: "transparent",
+    background: "var(--surface-subtle)",
   },
   historyItemTitle: {
     color: "var(--text)",
-    fontSize: "0.89rem",
+    fontSize: "0.85rem",
     fontWeight: 600,
     lineHeight: 1.3,
   },
@@ -875,24 +848,24 @@ const styles: Record<string, CSSProperties> = {
   errorText: {
     margin: 0,
     padding: "0 4px",
-    color: "#a22e2e",
+    color: "var(--danger)",
     fontSize: "0.8rem",
     lineHeight: 1.45,
   },
   profileLink: {
     width: "100%",
-    borderRadius: "16px",
+    borderRadius: "12px",
     border: "1px solid transparent",
-    background: "rgba(255, 255, 255, 0.58)",
-    minHeight: "42px",
-    padding: "2px 0 2px 2px",
+    background: "transparent",
+    minHeight: "36px",
+    padding: 0,
     display: "flex",
     alignItems: "center",
-    gap: "8px",
+    gap: "6px",
   },
   profileLinkActive: {
-    borderColor: "rgba(138, 55, 21, 0.14)",
-    background: "rgba(255, 244, 234, 0.94)",
+    borderColor: "transparent",
+    background: "var(--surface-subtle)",
   },
   profileRailLink: {
     textDecoration: "none",
@@ -901,16 +874,16 @@ const styles: Record<string, CSSProperties> = {
     padding: "2px",
   },
   profileRailLinkActive: {
-    borderColor: "rgba(138, 55, 21, 0.2)",
-    background: "rgba(255, 244, 234, 0.9)",
+    borderColor: "var(--border-strong)",
+    background: "var(--surface-subtle)",
   },
   profileAvatar: {
-    width: "38px",
-    height: "38px",
+    width: "34px",
+    height: "34px",
     borderRadius: "999px",
-    border: "1px solid rgba(94, 73, 61, 0.16)",
-    background: "#5e493d",
-    color: "#fff7f2",
+    border: "1px solid var(--border)",
+    background: "var(--surface-contrast)",
+    color: "#fff",
     display: "grid",
     placeItems: "center",
     fontSize: "0.92rem",
@@ -932,12 +905,12 @@ const styles: Record<string, CSSProperties> = {
     textDecoration: "none",
     display: "flex",
     alignItems: "center",
-    gap: "10px",
-    paddingRight: "8px",
+    gap: "8px",
+    paddingRight: "6px",
   },
   profileUsername: {
     minWidth: 0,
-    fontSize: "0.92rem",
+    fontSize: "0.88rem",
     fontWeight: 600,
     lineHeight: 1.3,
     whiteSpace: "nowrap",
@@ -949,36 +922,36 @@ const styles: Record<string, CSSProperties> = {
     flexShrink: 0,
   },
   profileActionButton: {
-    width: "34px",
-    height: "34px",
-    borderRadius: "10px",
-    border: "1px solid rgba(94, 73, 61, 0.12)",
-    background: "rgba(255, 255, 255, 0.9)",
-    color: "#5e493d",
+    width: "30px",
+    height: "30px",
+    borderRadius: "8px",
+    border: "1px solid transparent",
+    background: "transparent",
+    color: "var(--text-soft)",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     cursor: "pointer",
   },
   profileActionLink: {
-    minWidth: "68px",
-    minHeight: "34px",
-    borderRadius: "10px",
-    border: "1px solid rgba(94, 73, 61, 0.12)",
-    background: "rgba(255, 255, 255, 0.9)",
-    color: "#5e493d",
+    minWidth: "60px",
+    minHeight: "30px",
+    borderRadius: "8px",
+    border: "1px solid transparent",
+    background: "transparent",
+    color: "var(--text-soft)",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "0 12px",
-    fontSize: "0.88rem",
+    padding: "0 10px",
+    fontSize: "0.84rem",
     fontWeight: 600,
     textDecoration: "none",
   },
   profileActionLinkActive: {
-    borderColor: "rgba(138, 55, 21, 0.18)",
-    background: "rgba(255, 244, 234, 0.94)",
-    color: "#8a3715",
+    borderColor: "transparent",
+    background: "var(--surface-subtle)",
+    color: "var(--accent-strong)",
   },
   signOutMenu: {
     position: "absolute",
@@ -990,9 +963,9 @@ const styles: Record<string, CSSProperties> = {
     flexDirection: "column",
     gap: "2px",
     borderRadius: "12px",
-    border: "1px solid rgba(94, 73, 61, 0.14)",
-    background: "rgba(255, 249, 243, 0.98)",
-    boxShadow: "0 16px 36px rgba(73, 35, 14, 0.16)",
+    border: "1px solid var(--border)",
+    background: "rgba(250, 250, 247, 0.98)",
+    boxShadow: "0 16px 36px rgba(15, 23, 42, 0.08)",
     backdropFilter: "blur(18px)",
   },
   signOutMenuLink: {
@@ -1000,7 +973,7 @@ const styles: Record<string, CSSProperties> = {
     border: 0,
     borderRadius: "8px",
     background: "transparent",
-    color: "#5e493d",
+    color: "var(--text-soft)",
     padding: "8px 10px",
     textAlign: "left",
     fontSize: "0.88rem",
@@ -1012,7 +985,7 @@ const styles: Record<string, CSSProperties> = {
     border: 0,
     borderRadius: "8px",
     background: "transparent",
-    color: "#8a3715",
+    color: "var(--danger)",
     padding: "8px 10px",
     textAlign: "left",
     fontSize: "0.88rem",

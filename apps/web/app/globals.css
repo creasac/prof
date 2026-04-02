@@ -1,14 +1,27 @@
 :root {
-  --bg: #fbfaf7;
-  --panel: #fcf8f2;
+  --bg: #ffffff;
+  --panel: #f8f8f5;
   --panel-strong: #fffdfa;
   --composer-bg: #ffffff;
-  --border: rgba(72, 42, 22, 0.12);
-  --text: #21140d;
-  --muted: #6a5447;
-  --accent: #bf5b2c;
-  --accent-strong: #8a3715;
-  --shadow: 0 24px 60px rgba(73, 35, 14, 0.14);
+  --border: rgba(17, 17, 20, 0.1);
+  --border-strong: rgba(17, 17, 20, 0.16);
+  --text: #17171a;
+  --text-soft: #25252a;
+  --muted: #666871;
+  --muted-strong: #4d4f57;
+  --accent: #2a2a2f;
+  --accent-strong: #111114;
+  --surface-1: rgba(255, 255, 255, 0.88);
+  --surface-2: rgba(255, 255, 255, 0.96);
+  --surface-muted: rgba(249, 249, 247, 0.9);
+  --surface-subtle: rgba(17, 17, 20, 0.04);
+  --surface-subtle-strong: rgba(17, 17, 20, 0.08);
+  --surface-contrast: rgba(17, 17, 20, 0.92);
+  --danger: #a23434;
+  --danger-subtle: rgba(162, 52, 52, 0.08);
+  --success: #246b4a;
+  --success-subtle: rgba(36, 107, 74, 0.08);
+  --shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
   --font-sans: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
 }
 
@@ -49,7 +62,7 @@ body {
   padding-right: 6px;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: rgba(72, 42, 22, 0.12) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .learn-scroll::-webkit-scrollbar {
@@ -61,12 +74,12 @@ body {
 }
 
 .learn-scroll::-webkit-scrollbar-thumb {
-  background: rgba(72, 42, 22, 0.12);
+  background: var(--border);
   border-radius: 999px;
 }
 
 .learn-scroll:hover::-webkit-scrollbar-thumb {
-  background: rgba(72, 42, 22, 0.18);
+  background: var(--border-strong);
 }
 
 @media (min-width: 960px) {
@@ -115,7 +128,7 @@ a {
 }
 
 .markdown-content {
-  color: #000;
+  color: var(--text);
   line-height: 1.65;
   font-size: 1.02rem;
   overflow-wrap: anywhere;
@@ -203,15 +216,15 @@ a {
   font-size: 0.92em;
   padding: 0.12em 0.38em;
   border-radius: 6px;
-  background: rgba(72, 42, 22, 0.08);
+  background: var(--surface-subtle);
 }
 
 .markdown-content pre {
   overflow-x: auto;
   padding: 14px 16px;
-  border: 1px solid rgba(72, 42, 22, 0.08);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(255, 247, 239, 0.9);
+  background: var(--surface-1);
 }
 
 .markdown-content pre code {
@@ -224,7 +237,7 @@ a {
 
 .markdown-content blockquote {
   padding-left: 1rem;
-  border-left: 3px solid rgba(191, 91, 44, 0.28);
+  border-left: 3px solid var(--border-strong);
   color: var(--muted);
 }
 
@@ -243,12 +256,12 @@ a {
 .markdown-content th,
 .markdown-content td {
   padding: 0.65rem 0.8rem;
-  border: 1px solid rgba(72, 42, 22, 0.1);
+  border: 1px solid var(--border);
   text-align: left;
 }
 
 .markdown-content th {
-  background: rgba(255, 247, 239, 0.9);
+  background: var(--surface-muted);
   font-weight: 600;
 }
 
