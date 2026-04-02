@@ -1,7 +1,17 @@
+import { PROF_GUEST_USAGE_HEADER } from "@prof/contracts";
+
+import { getGuestUsageId } from "./guest-usage";
+
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 export const AUTH_API_BASE_URL = `${DEFAULT_API_BASE_URL.replace(/\/$/, "")}/api/auth`;
+export const USAGE_LIMIT_ERROR_CODE = "usage_limit_reached";
+
+type ApiErrorPayload = {
+  error?: string;
+  code?: string;
+};
 
 export function getApiBaseUrl() {
   if (typeof window === "undefined") {
@@ -29,11 +39,18 @@ export function buildApiUrl(path: string) {
 
 export async function fetchApi(path: string, init?: RequestInit) {
   const url = buildApiUrl(path);
+  const headers = new Headers(init?.headers);
+  const guestUsageId = getGuestUsageId();
+
+  if (guestUsageId) {
+    headers.set(PROF_GUEST_USAGE_HEADER, guestUsageId);
+  }
 
   try {
     return await fetch(url, {
-      credentials: "include",
       ...init,
+      credentials: "include",
+      headers,
     });
   } catch (error) {
     if (error instanceof TypeError) {
@@ -42,4 +59,14 @@ export async function fetchApi(path: string, init?: RequestInit) {
 
     throw error;
   }
+}
+
+export async function parseApiError(response: Response, fallback: string) {
+  const body = (await response.json().catch(() => ({}))) as ApiErrorPayload;
+
+  return {
+    status: response.status,
+    code: typeof body.code === "string" ? body.code : undefined,
+    message: typeof body.error === "string" && body.error.trim() ? body.error : fallback,
+  };
 }

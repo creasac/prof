@@ -2,6 +2,7 @@
 import {
   appConfigSchema,
   lessonQuizResponseSchema,
+  PROF_USAGE_CHANNEL_HEADER,
   reasoningPlanStreamEventSchema,
   reasoningTopicBlockStreamEventSchema,
   voiceSessionResponseSchema,
@@ -41,7 +42,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { authClient } from "../lib/auth-client";
-import { fetchApi } from "../lib/api";
+import { fetchApi, parseApiError, USAGE_LIMIT_ERROR_CODE } from "../lib/api";
 import { notifyCourseLibraryUpdated } from "../lib/app-shell-events";
 import { buildCourseHref } from "../lib/course-route";
 import { loadRemoteCourse } from "../lib/course-api";
@@ -85,6 +86,10 @@ import { BlockView, Icon, IconText } from "./TutorUi";
 
 type ChatMessage = LearnSessionMessage;
 type SessionHistoryEntry = LearnSessionSummary;
+type UsageAlert = {
+  channel: "live" | "text";
+  message: string;
+};
 
 const DESKTOP_MEDIA_QUERY = "(min-width: 960px)";
 const DEFAULT_LEFT_PANE_PERCENT = 56;
@@ -126,6 +131,30 @@ const LIVE_REASONING_TOOL_NAME = "request_reasoning";
 const REASONING_REQUEST_TYPES = ["new_content", "update_content", "general_query"] as const;
 const REASONING_UPDATE_TARGETS = ["lesson", "topic_list", "topic", "quiz", "flashcards", "plan", "all", "unknown"] as const;
 const REASONING_BLOCK_TYPES = ["lesson", "quiz", "flashcards", "essay_prompt", "follow_up_question"] as const;
+
+type ApiErrorWithCode = Error & {
+  code?: string;
+  status?: number;
+};
+
+function createUsageHeaders(channel: "live" | "text") {
+  return {
+    "Content-Type": "application/json",
+    [PROF_USAGE_CHANNEL_HEADER]: channel,
+  };
+}
+
+async function createApiError(response: Response, fallback: string) {
+  const parsed = await parseApiError(response, fallback);
+  const error = new Error(parsed.message) as ApiErrorWithCode;
+  error.code = parsed.code;
+  error.status = parsed.status;
+  return error;
+}
+
+function isUsageLimitError(error: unknown): error is ApiErrorWithCode {
+  return error instanceof Error && (error as ApiErrorWithCode).code === USAGE_LIMIT_ERROR_CODE;
+}
 
 type LiveStatus = "Connected" | "Connecting" | "Disconnected" | "Error";
 
@@ -756,6 +785,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const [topicError, setTopicError] = useState<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("Disconnected");
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [usageAlert, setUsageAlert] = useState<UsageAlert | null>(null);
   const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
   const [liveInputDraft, setLiveInputDraft] = useState("");
   const [liveOutputDraft, setLiveOutputDraft] = useState("");
@@ -822,6 +852,42 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const lastCachedSnapshotKeyRef = useRef<string | null>(null);
   const lastTrackedActivityKeyRef = useRef<string | null>(null);
   const sessionTimestampsRef = useRef<{ createdAt: string; updatedAt: string } | null>(null);
+
+  function clearUsageAlert(channel?: "live" | "text") {
+    setUsageAlert((current) => {
+      if (!current) {
+        return null;
+      }
+
+      if (!channel || current.channel === channel) {
+        return null;
+      }
+
+      return current;
+    });
+  }
+
+  function handleUsageAwareError(options: {
+    channel?: "live" | "text";
+    error: unknown;
+    fallback: string;
+    setter?: (value: string | null) => void;
+  }) {
+    if (options.channel && isUsageLimitError(options.error)) {
+      setUsageAlert({
+        channel: options.channel,
+        message: options.error.message || options.fallback,
+      });
+      options.setter?.(null);
+      return;
+    }
+
+    if (options.channel) {
+      clearUsageAlert(options.channel);
+    }
+
+    options.setter?.(options.error instanceof Error ? options.error.message : options.fallback);
+  }
 
   function commitPendingPdfDrafts(nextDrafts: PendingPdfDraft[]) {
     pendingPdfDraftsRef.current = nextDrafts;
@@ -1668,9 +1734,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     try {
       const response = await fetchApi("/api/reasoning/topic-quiz", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: createUsageHeaders("text"),
         body: JSON.stringify({
           goal: quizGoal,
           topicId: options.topicId,
@@ -1681,11 +1745,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       });
 
       if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error ?? "Quiz generation failed.");
+        throw await createApiError(response, "Quiz generation failed.");
       }
 
       const payload = lessonQuizResponseSchema.parse(await response.json());
+      clearUsageAlert("text");
 
       if (companionQuizRequestRef.current !== requestId) {
         return null;
@@ -1697,7 +1761,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       return payload.quiz;
     } catch (error) {
       if (companionQuizRequestRef.current === requestId) {
-        setGeneratedQuizError(error instanceof Error ? error.message : "Quiz generation failed.");
+        handleUsageAwareError({
+          channel: "text",
+          error,
+          fallback: "Quiz generation failed.",
+          setter: setGeneratedQuizError,
+        });
       }
 
       return null;
@@ -1761,9 +1830,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       const requestSourceMaterials = await ensureUrlMaterialsAttached([requestGoal, nextInput].filter(Boolean).join("\n"));
       const response = await fetchApi("/api/reasoning/plan/stream", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: createUsageHeaders("text"),
         signal: controller.signal,
         body: JSON.stringify({
           mode,
@@ -1776,8 +1843,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       });
 
       if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error ?? "Planning request failed.");
+        throw await createApiError(response, "Planning request failed.");
       }
 
       if (!response.body) {
@@ -1873,6 +1939,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       if (!receivedFinalEvent && !controller.signal.aborted) {
         throw new Error("Planning stream ended before the final result arrived.");
       }
+
+      clearUsageAlert("text");
     } catch (error) {
       if (
         controller.signal.aborted ||
@@ -1884,7 +1952,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       setStreamedRequestType(null);
       setStreamedPlanTitle("");
       setStreamedTopics([]);
-      setPlannerError(error instanceof Error ? error.message : "Planning request failed.");
+      handleUsageAwareError({
+        channel: "text",
+        error,
+        fallback: "Planning request failed.",
+        setter: setPlannerError,
+      });
     } finally {
       if (planningAbortRef.current === controller) {
         planningAbortRef.current = null;
@@ -2038,9 +2111,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       const requestSourceMaterials = await ensureUrlMaterialsAttached(trimmedInput);
       const response = await fetchApi("/api/reasoning/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: createUsageHeaders("text"),
         body: JSON.stringify({
           message: trimmedInput,
           requestType,
@@ -2056,11 +2127,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       });
 
       if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error ?? "Chat request failed.");
+        throw await createApiError(response, "Chat request failed.");
       }
 
       const data = (await response.json()) as ReasoningChatResponse;
+      clearUsageAlert("text");
 
       if (data.content) {
         const content = data.content;
@@ -2099,7 +2170,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         setPlanSources(data.sources ?? []);
       }
     } catch (error) {
-      setPlannerError(error instanceof Error ? error.message : "Chat request failed.");
+      handleUsageAwareError({
+        channel: "text",
+        error,
+        fallback: "Chat request failed.",
+        setter: setPlannerError,
+      });
     }
   }
 
@@ -2194,9 +2270,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       const useWebSearch = await getAutomaticSearchEnabled();
       const response = await fetchApi("/api/reasoning/topic-block/stream", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: createUsageHeaders("text"),
         body: JSON.stringify({
           goal: studyGoal,
           plan,
@@ -2208,8 +2282,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       });
 
       if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error ?? "Topic generation failed.");
+        throw await createApiError(response, "Topic generation failed.");
       }
 
       if (!response.body) {
@@ -2372,6 +2445,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         throw new Error("Topic generation stream ended before the final result arrived.");
       }
 
+      clearUsageAlert("text");
+
       if (finalLessonBlock && finalTopicId) {
         void requestLessonQuiz({
           topicId: finalTopicId,
@@ -2393,7 +2468,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       setGeneratedQuizError(previousGeneratedQuizError);
       setQuizProgress(previousQuizProgress);
       setBlockSources(previousBlockSources);
-      setTopicError(error instanceof Error ? error.message : "Topic generation failed.");
+      handleUsageAwareError({
+        channel: "text",
+        error,
+        fallback: "Topic generation failed.",
+        setter: setTopicError,
+      });
     } finally {
       setIsGeneratingTopic(false);
     }
@@ -2639,6 +2719,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     preferredBlockType?: TutorBlockType;
     chatHistory?: ChatMessage[];
     appendToLiveMessages?: boolean;
+    usageChannel?: "live" | "text";
   }) {
     const planSnapshot = planRef.current ?? undefined;
     const currentTopic = resolveCurrentTopic(planSnapshot);
@@ -2650,9 +2731,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
     const response = await fetchApi("/api/reasoning/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: createUsageHeaders(options.usageChannel ?? "text"),
       body: JSON.stringify({
         message: options.message,
         requestType: options.requestType,
@@ -2668,11 +2747,11 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     });
 
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body.error ?? "Reasoning request failed.");
+      throw await createApiError(response, "Reasoning request failed.");
     }
 
     const data = (await response.json()) as ReasoningChatResponse;
+    clearUsageAlert(options.usageChannel ?? "text");
 
     if (data.content && options.appendToLiveMessages) {
       const content = data.content;
@@ -2738,6 +2817,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       preferredBlockType: options.intent.preferredBlockType,
       chatHistory: getLiveChatHistory(),
       appendToLiveMessages: options.appendToLiveMessages,
+      usageChannel: "live",
     });
 
     return { kind: "reasoning", data };
@@ -3092,13 +3172,14 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       const sessionResponse = await fetchApi("/api/voice/session", {
         method: "POST",
       });
-      const sessionBody = await sessionResponse.json().catch(() => ({}));
 
       if (!sessionResponse.ok) {
-        throw new Error((sessionBody as { error?: string }).error ?? "Failed to create a voice session.");
+        throw await createApiError(sessionResponse, "Failed to create a voice session.");
       }
 
+      const sessionBody = await sessionResponse.json().catch(() => ({}));
       const sessionConfig = voiceSessionResponseSchema.parse(sessionBody);
+      clearUsageAlert("live");
 
       playerRef.current = playerRef.current ?? new PcmPlayer();
       let sessionHandle: VoiceSessionHandle | null = null;
@@ -3287,7 +3368,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       return true;
     } catch (error) {
       setLiveStatus("Disconnected");
-      setLiveError(error instanceof Error ? error.message : "Failed to connect live session.");
+      handleUsageAwareError({
+        channel: "live",
+        error,
+        fallback: "Failed to connect live session.",
+        setter: setLiveError,
+      });
       return false;
     }
   }
@@ -3956,6 +4042,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             </div>
           ) : null}
 
+          {usageAlert ? (
+            <div role="alert" style={styles.usageAlertBox}>
+              <p style={styles.usageAlertText}>{usageAlert.message}</p>
+            </div>
+          ) : null}
+
           <div style={styles.chatComposer}>
             <PromptComposer
               goal={plannerInput}
@@ -4540,6 +4632,18 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: "0.98rem",
     lineHeight: 1.5,
+  },
+  usageAlertBox: {
+    borderRadius: "16px",
+    border: "1px solid color-mix(in srgb, var(--danger) 28%, var(--border))",
+    background: "color-mix(in srgb, var(--danger) 8%, var(--surface-2))",
+    padding: "10px 12px",
+  },
+  usageAlertText: {
+    margin: 0,
+    color: "var(--text-soft)",
+    fontSize: "0.86rem",
+    lineHeight: 1.55,
   },
   controlButton: {
     borderWidth: "1px",

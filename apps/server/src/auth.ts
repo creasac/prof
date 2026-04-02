@@ -100,10 +100,12 @@ export const auth = isAuthEnabled
       databaseHooks: {
         user: {
           create: {
-            before(userRecord) {
+            async before(userRecord) {
               const nextName = normalizeNameInput(userRecord.name);
               const nextEmail = normalizeEmailInput(userRecord.email);
-              const nextUsername = normalizeUsernameInput(userRecord.username ?? "");
+              const nextUsername = normalizeUsernameInput(
+                typeof userRecord.username === "string" ? userRecord.username : "",
+              );
 
               assertNonEmptyString(nextName, "Name");
               assertNonEmptyString(nextEmail, "Email");
@@ -121,7 +123,7 @@ export const auth = isAuthEnabled
             },
           },
           update: {
-            before(userRecord) {
+            async before(userRecord) {
               const nextUserRecord = { ...userRecord };
 
               if (typeof nextUserRecord.name === "string") {
@@ -135,9 +137,10 @@ export const auth = isAuthEnabled
               }
 
               if (typeof nextUserRecord.username === "string") {
-                nextUserRecord.username = normalizeUsernameInput(nextUserRecord.username);
-                assertNonEmptyString(nextUserRecord.username, "Username");
-                assertValidUsername(nextUserRecord.username);
+                const nextUsername = normalizeUsernameInput(nextUserRecord.username);
+                assertNonEmptyString(nextUsername, "Username");
+                assertValidUsername(nextUsername);
+                nextUserRecord.username = nextUsername;
               }
 
               return {

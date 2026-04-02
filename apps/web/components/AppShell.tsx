@@ -400,7 +400,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <span style={styles.buttonIconWrap}>
                     <Icon name="plus" size={17} />
                   </span>
-                  <span>learn something new</span>
+                  <span>learn something</span>
                 </button>
 
                 <button
@@ -415,7 +415,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <span style={styles.buttonIconWrap}>
                     <Icon name="search" size={16} />
                   </span>
-                  <span>explore</span>
+                  <span>explore courses</span>
                 </button>
               </div>
 

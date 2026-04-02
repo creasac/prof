@@ -717,6 +717,11 @@ export const sourceMaterialResponseSchema = z.object({
   material: sourceMaterialSchema,
 });
 
+export const PROF_GUEST_USAGE_HEADER = "x-prof-guest-id";
+export const PROF_USAGE_CHANNEL_HEADER = "x-prof-usage-channel";
+
+const GUEST_USAGE_ID_PATTERN = /^[A-Za-z0-9_-]{12,120}$/;
+
 export type ReasoningResponseType = z.infer<typeof reasoningResponseTypeSchema>;
 export type ReasoningRequestType = z.infer<typeof reasoningRequestTypeSchema>;
 export type ReasoningUpdateTarget = z.infer<typeof reasoningUpdateTargetSchema>;
@@ -729,6 +734,15 @@ export type AttachUrlRequest = z.infer<typeof attachUrlRequestSchema>;
 export type SourceMaterialResponse = z.infer<typeof sourceMaterialResponseSchema>;
 
 const PUBLIC_ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+export function normalizeGuestUsageId(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return GUEST_USAGE_ID_PATTERN.test(normalized) ? normalized : null;
+}
 
 export function createPublicId(length = 10) {
   const nextLength = Math.max(4, Math.floor(length));

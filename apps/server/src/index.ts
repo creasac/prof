@@ -87,6 +87,7 @@ import {
 import { normalizeReasoningChatResponse } from "./reasoning-chat.js";
 import { normalizeTutorBlock } from "./tutor.js";
 import { createVoiceSession, isVoiceEnabled } from "./providers/voice/index.js";
+import { enforceUsageLimit, getRequestUsageChannel } from "./usage-limits.js";
 
 const app = express();
 
@@ -633,6 +634,10 @@ app.patch("/api/courses/:username/:courseSlug", async (req, res, next) => {
 
 app.post("/api/voice/session", async (_req, res, next) => {
   try {
+    if (!(await enforceUsageLimit(_req, res, "live"))) {
+      return;
+    }
+
     const session = await createVoiceSession();
     res.json(voiceSessionResponseSchema.parse(session));
   } catch (error) {
@@ -648,6 +653,10 @@ app.post("/api/reasoning/block", async (req, res, next) => {
         error: "Invalid request",
         details: requestParse.error.flatten(),
       });
+      return;
+    }
+
+    if (!(await enforceUsageLimit(req, res, "text"))) {
       return;
     }
 
@@ -692,6 +701,10 @@ app.post("/api/reasoning/plan/stream", async (req, res, next) => {
         error: "Invalid request",
         details: requestParse.error.flatten(),
       });
+      return;
+    }
+
+    if (!(await enforceUsageLimit(req, res, "text"))) {
       return;
     }
 
@@ -860,6 +873,10 @@ app.post("/api/reasoning/plan", async (req, res, next) => {
       return;
     }
 
+    if (!(await enforceUsageLimit(req, res, "text"))) {
+      return;
+    }
+
     const input = requestParse.data;
     const schema = zodToJsonSchema(planningModelResultSchema, {
       $refStrategy: "none",
@@ -915,6 +932,10 @@ app.post("/api/reasoning/topic-block/stream", async (req, res, next) => {
       res.status(404).json({
         error: `Topic ${input.topicId} was not found in the supplied plan.`,
       });
+      return;
+    }
+
+    if (!(await enforceUsageLimit(req, res, "text"))) {
       return;
     }
 
@@ -1018,6 +1039,10 @@ app.post("/api/reasoning/topic-block", async (req, res, next) => {
       return;
     }
 
+    if (!(await enforceUsageLimit(req, res, "text"))) {
+      return;
+    }
+
     const schema = zodToJsonSchema(tutorBlockSchema, {
       $refStrategy: "none",
     });
@@ -1059,6 +1084,10 @@ app.post("/api/reasoning/topic-quiz", async (req, res, next) => {
         error: "Invalid request",
         details: requestParse.error.flatten(),
       });
+      return;
+    }
+
+    if (!(await enforceUsageLimit(req, res, "text"))) {
       return;
     }
 
@@ -1106,6 +1135,10 @@ app.post("/api/reasoning/chat", async (req, res, next) => {
         error: "Invalid request",
         details: requestParse.error.flatten(),
       });
+      return;
+    }
+
+    if (getRequestUsageChannel(req) !== "live" && !(await enforceUsageLimit(req, res, "text"))) {
       return;
     }
 

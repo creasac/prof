@@ -131,6 +131,24 @@ export const course = pgTable(
   }),
 );
 
+export const usageEvent = pgTable(
+  "usage_event",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    guestId: text("guest_id"),
+    kind: text("kind").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    actorPresent: check("usage_event_actor_present", sql`num_nonnulls(${table.userId}, ${table.guestId}) = 1`),
+    kindValid: check("usage_event_kind_valid", sql`${table.kind} in ('live', 'text')`),
+    userKindCreatedAtIndex: index("usage_event_user_kind_created_at_idx").on(table.userId, table.kind, table.createdAt),
+    guestKindCreatedAtIndex: index("usage_event_guest_kind_created_at_idx").on(table.guestId, table.kind, table.createdAt),
+    createdAtIndex: index("usage_event_created_at_idx").on(table.createdAt),
+  }),
+);
+
 export const schema = {
   user,
   session,
@@ -138,6 +156,7 @@ export const schema = {
   verification,
   learnSession,
   course,
+  usageEvent,
 };
 
 export const emptyJsonArray = sql`'[]'::jsonb`;
