@@ -217,11 +217,11 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: "0.8rem",
     lineHeight: 1.4,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
   },
   emptyText: {
     margin: 0,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.94rem",
   },
   errorText: {

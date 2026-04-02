@@ -35,7 +35,7 @@ export function MarkdownRenderer({
   style,
   variant = "default",
 }: MarkdownRendererProps) {
-  const normalizedMarkdown = decodeEscapedMarkdown(normalizeMarkdownLineBreaks(markdown));
+  const normalizedMarkdown = decodeEscapedMarkdown(markdown);
 
   if (!normalizedMarkdown.trim()) {
     return null;
@@ -78,12 +78,4 @@ function decodeEscapedMarkdown(markdown: string) {
     .replace(/\\n/g, "\n")
     .replace(/\\r/g, "\n")
     .replace(/\\t/g, "\t");
-}
-
-function normalizeMarkdownLineBreaks(markdown: string): string {
-  if (!markdown) {
-    return markdown;
-  }
-
-  return markdown.replace(/([^\n])(\n?#{1,6}\s)/g, "$1\n$2");
 }

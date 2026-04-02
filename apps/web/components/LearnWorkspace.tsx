@@ -4511,7 +4511,7 @@ const styles: Record<string, CSSProperties> = {
   },
   emptyText: {
     margin: "6px 0 0",
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.94rem",
     lineHeight: 1.6,
   },
@@ -4592,7 +4592,7 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: "0.94rem",
     lineHeight: 1.55,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
   },
   quizLauncherActions: {
     display: "flex",

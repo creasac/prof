@@ -199,7 +199,7 @@ const styles: Record<string, CSSProperties> = {
   },
   emptyText: {
     margin: "8px 0 0",
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.88rem",
     lineHeight: 1.6,
   },
@@ -218,7 +218,7 @@ const styles: Record<string, CSSProperties> = {
   },
   noticeReason: {
     margin: "8px 0 0",
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.88rem",
     lineHeight: 1.6,
   },
@@ -237,7 +237,7 @@ const styles: Record<string, CSSProperties> = {
   },
   loadingText: {
     margin: 0,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.88rem",
   },
   topicStack: {
@@ -285,7 +285,7 @@ const styles: Record<string, CSSProperties> = {
   },
   topicSummary: {
     margin: "8px 0 0 24px",
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.88rem",
     lineHeight: 1.6,
   },
@@ -318,7 +318,7 @@ const styles: Record<string, CSSProperties> = {
   },
   topicHint: {
     margin: 0,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.88rem",
     lineHeight: 1.6,
     maxWidth: "460px",

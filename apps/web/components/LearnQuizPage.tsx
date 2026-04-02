@@ -523,7 +523,7 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: "0.9rem",
     lineHeight: 1.5,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
   },
   link: {
     color: "var(--text-soft)",
@@ -557,7 +557,7 @@ const styles: Record<string, CSSProperties> = {
   progressText: {
     fontSize: "0.84rem",
     lineHeight: 1.4,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
   },
   questionHeader: {
     display: "flex",
@@ -715,7 +715,7 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: "0.8rem",
     lineHeight: 1.4,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
   },
   reviewPrompt: {
     margin: 0,

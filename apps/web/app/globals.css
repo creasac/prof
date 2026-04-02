@@ -5,10 +5,11 @@
   --composer-bg: #ffffff;
   --border: rgba(17, 17, 20, 0.1);
   --border-strong: rgba(17, 17, 20, 0.16);
-  --text: #17171a;
-  --text-soft: #25252a;
-  --muted: #666871;
-  --muted-strong: #4d4f57;
+  --text: #141418;
+  --text-soft: #1d1f24;
+  --muted: #565963;
+  --muted-strong: #3f434b;
+  --warm-muted: #5b493f;
   --accent: #2a2a2f;
   --accent-strong: #111114;
   --surface-1: rgba(255, 255, 255, 0.88);
@@ -132,6 +133,7 @@ a {
   line-height: 1.65;
   font-size: 1.02rem;
   overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .markdown-content > :first-child {
@@ -276,7 +278,7 @@ a {
 }
 
 .markdown-content--compact {
-  font-size: 0.98rem;
+  font-size: 1.08rem;
   line-height: 1.6;
 }
 

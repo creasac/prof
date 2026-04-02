@@ -450,7 +450,7 @@ const styles: Record<string, CSSProperties> = {
   },
   metaText: {
     margin: 0,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.9rem",
   },
   metaRow: {
@@ -566,7 +566,7 @@ const styles: Record<string, CSSProperties> = {
   },
   quizText: {
     margin: "4px 0 0",
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.88rem",
   },
   emptyState: {
@@ -582,12 +582,12 @@ const styles: Record<string, CSSProperties> = {
   },
   emptyText: {
     margin: "6px 0 0",
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     lineHeight: 1.6,
   },
   helperText: {
     margin: 0,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.88rem",
   },
   errorText: {

@@ -319,7 +319,7 @@ const styles: Record<string, CSSProperties> = {
   },
   metaText: {
     margin: "6px 0 0",
-    color: "#6a5447",
+    color: "var(--warm-muted)",
   },
   link: {
     borderRadius: "999px",
@@ -349,11 +349,11 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     justifyContent: "space-between",
     gap: "12px",
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.88rem",
   },
   progressText: {
-    color: "#6a5447",
+    color: "var(--warm-muted)",
   },
   questionHeader: {
     display: "flex",

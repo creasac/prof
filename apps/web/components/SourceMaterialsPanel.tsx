@@ -116,7 +116,7 @@ const styles: Record<string, CSSProperties> = {
   },
   emptyText: {
     margin: 0,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.9rem",
   },
   errorText: {
@@ -165,7 +165,7 @@ const styles: Record<string, CSSProperties> = {
   },
   metaText: {
     margin: 0,
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.82rem",
     wordBreak: "break-word",
   },

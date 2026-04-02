@@ -388,7 +388,6 @@ const styles: Record<string, CSSProperties> = {
     color: "var(--text-soft)",
   },
   markdownBox: {
-    whiteSpace: "pre-wrap",
     lineHeight: 1.7,
     padding: "12px",
     borderRadius: "12px",
@@ -412,7 +411,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: "0.92rem",
   },
   infoText: {
-    color: "#6a5447",
+    color: "var(--warm-muted)",
     fontSize: "0.96rem",
     lineHeight: 1.6,
   },
