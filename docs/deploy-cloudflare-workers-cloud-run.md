@@ -28,7 +28,7 @@ Create a Cloudflare Worker from the GitHub repo.
 
 Recommended Workers Builds settings:
 
-- Worker name: `prof-web`
+- Worker name: `prof`
 - Production branch: `main`
 - Root directory: `.`
 - Build command: `npm run build:cf:web`
@@ -44,7 +44,7 @@ Optional build variables:
 
 After deploy, Cloudflare will give you a free URL like:
 
-- `https://prof-web.YOUR-SUBDOMAIN.workers.dev`
+- `https://prof.YOUR-SUBDOMAIN.workers.dev`
 
 ## Backend deploy
 
@@ -65,8 +65,8 @@ Minimum required backend config:
 
 ```bash
 PORT=8080
-WEB_ORIGIN=https://prof-web.YOUR-SUBDOMAIN.workers.dev
-AUTH_BASE_URL=https://prof-web.YOUR-SUBDOMAIN.workers.dev
+WEB_ORIGIN=https://prof.YOUR-SUBDOMAIN.workers.dev
+AUTH_BASE_URL=https://prof.YOUR-SUBDOMAIN.workers.dev
 AUTH_SECRET=YOUR_SECRET
 ```
 
@@ -112,7 +112,7 @@ Set `AUTH_BASE_URL` to the frontend `workers.dev` URL, not the Cloud Run `run.ap
 
 That keeps auth endpoints under:
 
-- `https://prof-web.YOUR-SUBDOMAIN.workers.dev/api/auth/*`
+- `https://prof.YOUR-SUBDOMAIN.workers.dev/api/auth/*`
 
 The frontend proxy forwards those requests to Cloud Run, and the browser stores cookies on the frontend hostname.
 
