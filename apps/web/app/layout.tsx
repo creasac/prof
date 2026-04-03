@@ -6,6 +6,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "prof - learn anything",
   description: "prof helps you learn anything.",
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
