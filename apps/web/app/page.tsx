@@ -122,7 +122,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: "clamp(1.38rem, 2.8vw, 1.82rem)",
     lineHeight: 1,
     fontWeight: 550,
-    color: "#5e493d",
+    color: "var(--warm-accent)",
     letterSpacing: "0.01em",
     textAlign: "center",
   },

@@ -281,7 +281,7 @@ const styles: Record<string, CSSProperties> = {
     whiteSpace: "nowrap",
   },
   topicTitleGenerated: {
-    color: "#2f6a3b",
+    color: "var(--success)",
   },
   topicSummary: {
     margin: "8px 0 0 24px",
@@ -299,14 +299,14 @@ const styles: Record<string, CSSProperties> = {
     whiteSpace: "nowrap",
   },
   topicScorePass: {
-    color: "#2f6a3b",
-    background: "rgba(47, 106, 59, 0.12)",
-    borderColor: "rgba(47, 106, 59, 0.25)",
+    color: "var(--success)",
+    background: "var(--success-subtle)",
+    borderColor: "color-mix(in srgb, var(--success) 26%, var(--border))",
   },
   topicScoreFail: {
-    color: "#b8402a",
-    background: "rgba(184, 64, 42, 0.12)",
-    borderColor: "rgba(184, 64, 42, 0.25)",
+    color: "var(--danger)",
+    background: "var(--danger-subtle)",
+    borderColor: "color-mix(in srgb, var(--danger) 26%, var(--border))",
   },
   topicActions: {
     display: "flex",
@@ -327,7 +327,7 @@ const styles: Record<string, CSSProperties> = {
     border: "none",
     borderRadius: "999px",
     background: "var(--surface-contrast)",
-    color: "#fff",
+    color: "var(--inverse-text)",
     padding: "9px 14px",
     cursor: "pointer",
     fontWeight: 600,

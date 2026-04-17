@@ -340,6 +340,12 @@ export const persistedCourseSchema = z.object({
 export const learnCourseSummarySchema = courseSummarySchema;
 export const learnCourseSeedSchema = persistedCourseSchema;
 
+export const themePreferenceSchema = z.enum(["light", "dark", "system"]);
+
+export const accountPreferencesSchema = z.object({
+  themePreference: themePreferenceSchema,
+});
+
 export const privateProfileSchema = z.object({
   name: z.string().min(1),
   username: z.string().min(1),
@@ -679,6 +685,8 @@ export type LearnCourseSeed = z.infer<typeof learnCourseSeedSchema>;
 export type LearnCourseSummary = z.infer<typeof learnCourseSummarySchema>;
 export type PersistedLearnSession = z.infer<typeof persistedLearnSessionSchema>;
 export type LearnSessionSummary = z.infer<typeof learnSessionSummarySchema>;
+export type ThemePreference = z.infer<typeof themePreferenceSchema>;
+export type AccountPreferences = z.infer<typeof accountPreferencesSchema>;
 export type PrivateProfile = z.infer<typeof privateProfileSchema>;
 export type VoiceSessionResponse = z.infer<typeof voiceSessionResponseSchema>;
 export type CoursePlan = z.infer<typeof coursePlanSchema>;

@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import {
+  accountPreferencesSchema,
   accountUnlimitedAccessStatusSchema,
   attachUrlRequestSchema,
   flashcardSchema,
@@ -30,6 +31,7 @@ import {
   reasoningPlanResponseSchema,
   reasoningChatRequestSchema,
   reasoningChatResponseSchema,
+  themePreferenceSchema,
   tutorBlockSchema,
   tutorBlockTypeSchema,
   voiceSessionResponseSchema,
@@ -42,6 +44,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { ZodError, z } from "zod";
 
 import { authHandler, getAuthSession, isAuthEnabled } from "./auth.js";
+import { readAccountPreferences, updateAccountThemePreference } from "./account-preferences.js";
 import { isDatabaseEnabled } from "./db/client.js";
 import { env } from "./env.js";
 import {
@@ -215,6 +218,54 @@ app.get("/api/account/unlimited-access", async (req, res, next) => {
 
     const status = await getAccountUnlimitedAccessStatus(authSession.user.id);
     res.json(accountUnlimitedAccessStatusSchema.parse(status));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/account/preferences", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const preferences = await readAccountPreferences(authSession.user.id);
+    if (!preferences) {
+      res.status(404).json({
+        error: "Account not found.",
+      });
+      return;
+    }
+
+    res.json(accountPreferencesSchema.parse(preferences));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/account/preferences", async (req, res, next) => {
+  try {
+    const authSession = await requireUserSession(req, res);
+    if (!authSession) {
+      return;
+    }
+
+    const body = z
+      .object({
+        themePreference: themePreferenceSchema,
+      })
+      .parse(req.body);
+
+    const preferences = await updateAccountThemePreference(authSession.user.id, body.themePreference);
+    if (!preferences) {
+      res.status(404).json({
+        error: "Account not found.",
+      });
+      return;
+    }
+
+    res.json(accountPreferencesSchema.parse(preferences));
   } catch (error) {
     next(error);
   }

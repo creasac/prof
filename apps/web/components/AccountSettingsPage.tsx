@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import type { AccountUnlimitedAccessStatus } from "@prof/contracts";
+import type { AccountUnlimitedAccessStatus, ThemePreference } from "@prof/contracts";
 
 import { authClient } from "../lib/auth-client";
 import {
@@ -15,6 +15,29 @@ import {
 import { buildProfileHref, buildSettingsHref } from "../lib/profile-route";
 import { loadAccountUnlimitedAccessStatus, redeemAccountUnlimitedAccessCode } from "../lib/unlimited-access-api";
 import { PasswordField } from "./PasswordField";
+import { useTheme } from "./ThemeProvider";
+
+const THEME_OPTIONS: Array<{
+  description: string;
+  title: string;
+  value: ThemePreference;
+}> = [
+  {
+    value: "light",
+    title: "Light",
+    description: "Bright surfaces and higher daylight contrast.",
+  },
+  {
+    value: "dark",
+    title: "Dark",
+    description: "Warm dim surfaces for lower-glare reading.",
+  },
+  {
+    value: "system",
+    title: "System",
+    description: "Follow your device appearance automatically.",
+  },
+];
 
 function formatUtcDateTime(value: string | null | undefined) {
   if (!value) {
@@ -84,10 +107,19 @@ function getUnlimitedAccessPillStyle(status: AccountUnlimitedAccessStatus | null
   return styles.statusPillExpired;
 }
 
+function getAppearanceStatusLabel(themePreference: ThemePreference, resolvedTheme: "light" | "dark") {
+  if (themePreference === "system") {
+    return `System · ${resolvedTheme}`;
+  }
+
+  return themePreference === "dark" ? "Dark" : "Light";
+}
+
 export function AccountSettingsPage() {
   const router = useRouter();
   const settingsHref = buildSettingsHref();
   const { data: session, isPending, refetch } = authClient.useSession();
+  const { isSavingTheme, resolvedTheme, setThemePreference, themeError, themePreference } = useTheme();
   const sessionName = getSessionUserName(session);
   const sessionUsername = getSessionUsername(session);
   const sessionEmail = typeof session?.user?.email === "string" ? session.user.email : "";
@@ -403,6 +435,48 @@ export function AccountSettingsPage() {
           </form>
         </section>
 
+        <section style={styles.card}>
+          <header style={styles.sectionHeader}>
+            <div style={styles.sectionHeaderText}>
+              <h2 style={styles.title}>Appearance</h2>
+              <p style={styles.sectionText}>Choose a theme. Your selection syncs across signed-in devices.</p>
+            </div>
+            <span style={{ ...styles.statusPill, ...styles.statusPillAvailable }}>
+              {isSavingTheme ? "Saving" : getAppearanceStatusLabel(themePreference, resolvedTheme)}
+            </span>
+          </header>
+
+          <div style={styles.themeOptionGrid}>
+            {THEME_OPTIONS.map((option) => {
+              const isActive = option.value === themePreference;
+
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  style={{
+                    ...styles.themeOption,
+                    ...(isActive ? styles.themeOptionActive : null),
+                  }}
+                  onClick={() => {
+                    void setThemePreference(option.value);
+                  }}
+                  aria-pressed={isActive}
+                  disabled={isSavingTheme}
+                >
+                  <span style={styles.themeOptionTitleRow}>
+                    <span style={styles.themeOptionTitle}>{option.title}</span>
+                    {isActive ? <span style={styles.themeOptionBadge}>Current</span> : null}
+                  </span>
+                  <span style={styles.themeOptionText}>{option.description}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {themeError ? <p style={styles.errorText}>{themeError}</p> : null}
+        </section>
+
         <section id="access-code" style={styles.card}>
           <header style={styles.sectionHeader}>
             <div style={styles.sectionHeaderText}>
@@ -596,7 +670,7 @@ const styles: Record<string, CSSProperties> = {
     border: 0,
     borderRadius: "10px",
     background: "var(--surface-contrast)",
-    color: "#fff",
+    color: "var(--inverse-text)",
     padding: "10px 14px",
     fontSize: "0.94rem",
     fontWeight: 600,
@@ -623,19 +697,67 @@ const styles: Record<string, CSSProperties> = {
     border: "1px solid transparent",
   },
   statusPillActive: {
-    background: "rgba(44, 138, 87, 0.12)",
-    borderColor: "rgba(44, 138, 87, 0.3)",
+    background: "var(--success-subtle)",
+    borderColor: "color-mix(in srgb, var(--success) 30%, var(--border))",
     color: "var(--success)",
   },
   statusPillAvailable: {
-    background: "rgba(73, 112, 212, 0.12)",
-    borderColor: "rgba(73, 112, 212, 0.24)",
-    color: "var(--text-soft)",
+    background: "var(--info-subtle)",
+    borderColor: "var(--info-border)",
+    color: "var(--info)",
   },
   statusPillExpired: {
-    background: "rgba(148, 163, 184, 0.12)",
-    borderColor: "rgba(148, 163, 184, 0.22)",
+    background: "var(--surface-subtle)",
+    borderColor: "var(--border-strong)",
     color: "var(--muted-strong)",
+  },
+  themeOptionGrid: {
+    display: "grid",
+    gap: "10px",
+  },
+  themeOption: {
+    width: "100%",
+    borderRadius: "14px",
+    border: "1px solid var(--border)",
+    background: "var(--surface-1)",
+    padding: "14px 15px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    textAlign: "left",
+    cursor: "pointer",
+    boxShadow: "var(--shadow-soft)",
+  },
+  themeOptionActive: {
+    borderColor: "var(--border-strong)",
+    background: "var(--surface-subtle)",
+  },
+  themeOptionTitleRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px",
+  },
+  themeOptionTitle: {
+    fontSize: "0.95rem",
+    lineHeight: 1.2,
+    color: "var(--text-soft)",
+    fontWeight: 700,
+  },
+  themeOptionBadge: {
+    borderRadius: "999px",
+    padding: "4px 9px",
+    border: "1px solid var(--border)",
+    background: "var(--surface-2)",
+    color: "var(--muted-strong)",
+    fontSize: "0.74rem",
+    fontWeight: 700,
+    lineHeight: 1,
+  },
+  themeOptionText: {
+    fontSize: "0.86rem",
+    lineHeight: 1.5,
+    color: "var(--muted)",
   },
   errorText: {
     margin: 0,

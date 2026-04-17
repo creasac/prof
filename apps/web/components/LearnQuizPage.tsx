@@ -660,7 +660,7 @@ const styles: Record<string, CSSProperties> = {
   navButtonPrimary: {
     background: "var(--surface-contrast)",
     borderColor: "var(--surface-contrast)",
-    color: "#fff",
+    color: "var(--inverse-text)",
   },
   navButtonDisabled: {
     opacity: 0.5,
@@ -704,11 +704,11 @@ const styles: Record<string, CSSProperties> = {
     background: "var(--surface-muted)",
   },
   reviewCardCorrect: {
-    borderColor: "rgba(36, 107, 74, 0.24)",
+    borderColor: "color-mix(in srgb, var(--success) 24%, var(--border))",
     background: "var(--success-subtle)",
   },
   reviewCardWrong: {
-    borderColor: "rgba(162, 52, 52, 0.2)",
+    borderColor: "color-mix(in srgb, var(--danger) 20%, var(--border))",
     background: "var(--danger-subtle)",
   },
   reviewMeta: {

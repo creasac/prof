@@ -59,7 +59,7 @@ const styles: Record<string, CSSProperties> = {
     border: 0,
     borderRadius: "8px",
     background: "transparent",
-    color: "#6c5648",
+    color: "var(--warm-muted)",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",

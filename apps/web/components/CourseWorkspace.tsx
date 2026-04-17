@@ -536,7 +536,7 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: "999px",
     padding: "8px 14px",
     background: "var(--surface-contrast)",
-    color: "#fff",
+    color: "var(--inverse-text)",
     fontSize: "0.86rem",
     cursor: "pointer",
   },

@@ -423,7 +423,7 @@ const styles: Record<string, CSSProperties> = {
     border: "none",
     padding: "10px 16px",
     background: "var(--surface-contrast)",
-    color: "#fff",
+    color: "var(--inverse-text)",
     cursor: "pointer",
   },
   scoreText: {
