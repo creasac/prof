@@ -18,21 +18,27 @@ export function normalizeReasoningChatResponse(
   options: {
     requestType?: ReasoningRequestType;
     preferredBlockType?: TutorBlockType;
+    allowLearnPanelUpdates?: boolean;
   } = {},
 ) {
   const source = asRecord(raw);
+  const allowLearnPanelUpdates = options.allowLearnPanelUpdates ?? false;
   const artifact =
-    source.artifact == null || !hasArtifactSignal(source.artifact)
+    !allowLearnPanelUpdates || source.artifact == null || !hasArtifactSignal(source.artifact)
       ? undefined
       : normalizeTutorBlock(source.artifact, options.preferredBlockType);
   const plan =
-    source.plan == null || !hasPlanSignal(source.plan) ? undefined : normalizeReasoningChatPlan(source.plan);
+    !allowLearnPanelUpdates || source.plan == null || !hasPlanSignal(source.plan)
+      ? undefined
+      : normalizeReasoningChatPlan(source.plan);
   const responseType = inferReasoningResponseType(source.responseType, {
+    allowLearnPanelUpdates,
     requestType: options.requestType,
     hasArtifact: Boolean(artifact),
     hasPlan: Boolean(plan),
   });
   const targetPanel = inferTargetPanel(source.targetPanel, {
+    allowLearnPanelUpdates,
     responseType,
     hasArtifact: Boolean(artifact),
     hasPlan: Boolean(plan),
@@ -70,11 +76,16 @@ function normalizeReasoningChatPlan(raw: unknown): ReasoningChatResponse["plan"]
 function inferReasoningResponseType(
   value: unknown,
   options: {
+    allowLearnPanelUpdates: boolean;
     requestType?: ReasoningRequestType;
     hasArtifact: boolean;
     hasPlan: boolean;
   },
 ): ReasoningResponseType {
+  if (!options.allowLearnPanelUpdates) {
+    return "chat";
+  }
+
   if (options.hasArtifact || options.hasPlan) {
     if (value === "artifact_create" || value === "artifact_update") {
       return value;
@@ -93,11 +104,16 @@ function inferReasoningResponseType(
 function inferTargetPanel(
   value: unknown,
   options: {
+    allowLearnPanelUpdates: boolean;
     responseType: ReasoningResponseType;
     hasArtifact: boolean;
     hasPlan: boolean;
   },
 ): TargetPanel {
+  if (!options.allowLearnPanelUpdates) {
+    return "chat";
+  }
+
   if (options.hasArtifact || options.hasPlan) {
     return "learn";
   }

@@ -6,11 +6,12 @@ import { useState, useTransition, type CSSProperties } from "react";
 
 import { PromptComposer } from "../components/PromptComposer";
 import {
-  createPendingPdfAttachmentDrafts,
-  writePendingPdfAttachments,
-  type PendingPdfAttachmentDraft,
-} from "../lib/pending-pdf-attachments";
+  createPendingAttachmentDrafts,
+  writePendingAttachmentDrafts,
+  type PendingAttachmentDraft,
+} from "../lib/pending-attachment-drafts";
 import { buildLearnHref, createLearnSessionId } from "../lib/learn-route";
+import { getSourceMaterialFileLabelForFile, isSupportedSourceMaterialFile } from "../lib/source-materials";
 
 export default function HomePage() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function HomePage() {
   const [draftSessionId] = useState(() => createLearnSessionId());
   const [goal, setGoal] = useState("");
   const [pendingAction, setPendingAction] = useState<"generate" | "live" | null>(null);
-  const [pendingPdfDrafts, setPendingPdfDrafts] = useState<PendingPdfAttachmentDraft[]>([]);
+  const [pendingAttachmentDrafts, setPendingAttachmentDrafts] = useState<PendingAttachmentDraft[]>([]);
 
   function launch(action: "generate" | "live") {
     setPendingAction(action);
@@ -36,21 +37,21 @@ export default function HomePage() {
     });
   }
 
-  function handleAttachPdfFiles(files: File[]) {
-    const pdfFiles = files.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
-    if (pdfFiles.length === 0) {
+  function handleAttachFiles(files: File[]) {
+    const supportedFiles = files.filter(isSupportedSourceMaterialFile);
+    if (supportedFiles.length === 0) {
       return;
     }
 
-    const nextDrafts = [...pendingPdfDrafts, ...createPendingPdfAttachmentDrafts(pdfFiles)];
-    setPendingPdfDrafts(nextDrafts);
-    writePendingPdfAttachments(draftSessionId, nextDrafts);
+    const nextDrafts = [...pendingAttachmentDrafts, ...createPendingAttachmentDrafts(supportedFiles)];
+    setPendingAttachmentDrafts(nextDrafts);
+    writePendingAttachmentDrafts(draftSessionId, nextDrafts);
   }
 
   function handleRemoveAttachment(attachmentId: string) {
-    const nextDrafts = pendingPdfDrafts.filter((draft) => draft.id !== attachmentId);
-    setPendingPdfDrafts(nextDrafts);
-    writePendingPdfAttachments(draftSessionId, nextDrafts);
+    const nextDrafts = pendingAttachmentDrafts.filter((draft) => draft.id !== attachmentId);
+    setPendingAttachmentDrafts(nextDrafts);
+    writePendingAttachmentDrafts(draftSessionId, nextDrafts);
   }
 
   return (
@@ -66,11 +67,12 @@ export default function HomePage() {
           onGoalChange={setGoal}
           onGenerate={() => launch("generate")}
           onLive={() => launch("live")}
-          onAttachPdfFiles={handleAttachPdfFiles}
+          onAttachFiles={handleAttachFiles}
           onRemoveAttachment={handleRemoveAttachment}
-          attachments={pendingPdfDrafts.map((draft) => ({
+          attachments={pendingAttachmentDrafts.map((draft) => ({
             id: draft.id,
             title: draft.file.name,
+            label: getSourceMaterialFileLabelForFile(draft.file),
           }))}
           generateLabel={isPending && pendingAction === "generate" ? "Sending..." : "Send"}
           generateBusy={isPending && pendingAction === "generate"}

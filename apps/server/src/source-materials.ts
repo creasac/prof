@@ -3,6 +3,7 @@ import {
   sourceMaterialSchema,
   type GroundingSource,
   type SourceMaterial,
+  type SourceMaterialFileKind,
 } from "@prof/contracts";
 
 import { env } from "./env.js";
@@ -25,9 +26,10 @@ export function buildSourceMaterialsPromptContext(materials: SourceMaterial[]) {
       const excerpt = clampText(material.textExcerpt, remainingChars);
       remainingChars -= excerpt.length;
 
-      const lines = [`${index + 1}. ${material.title}`, `Type: ${material.kind}`];
+      const lines = [`${index + 1}. ${material.title}`];
 
       if (material.kind === "url") {
+        lines.push("Type: url");
         if (material.sourceUrl) {
           lines.push(`Source URL: ${material.sourceUrl}`);
         }
@@ -38,8 +40,12 @@ export function buildSourceMaterialsPromptContext(materials: SourceMaterial[]) {
           lines.push(`Capture: ${material.capture}`);
         }
       } else {
+        lines.push(`Type: file${material.fileKind ? ` (${material.fileKind})` : ""}`);
         if (material.fileName) {
           lines.push(`File name: ${material.fileName}`);
+        }
+        if (material.mimeType) {
+          lines.push(`MIME type: ${material.mimeType}`);
         }
         if (material.sizeBytes !== undefined) {
           lines.push(`Size bytes: ${material.sizeBytes}`);
@@ -107,9 +113,10 @@ export function createUrlSourceMaterial(document: ImportedUrlDocument): SourceMa
   });
 }
 
-export function createPdfSourceMaterial(input: {
+export function createFileSourceMaterial(input: {
   id?: string;
   title: string;
+  fileKind: SourceMaterialFileKind;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
@@ -118,9 +125,10 @@ export function createPdfSourceMaterial(input: {
 }) {
   return sourceMaterialSchema.parse({
     id: input.id ?? createPublicId(12),
-    kind: "pdf",
+    kind: "file",
     title: clampTitle(input.title),
     createdAt: new Date().toISOString(),
+    fileKind: input.fileKind,
     fileName: input.fileName,
     mimeType: input.mimeType,
     sizeBytes: input.sizeBytes,
@@ -129,17 +137,17 @@ export function createPdfSourceMaterial(input: {
   });
 }
 
-export function buildPdfStorageKey(options: {
+export function buildFileStorageKey(options: {
   userId: string;
   sessionId: string;
   materialId: string;
   fileName: string;
 }) {
   const safeName = sanitizePathSegment(options.fileName || "document.pdf");
-  return `${buildPdfStoragePrefix(options)}/${sanitizePathSegment(options.materialId)}/${safeName}`;
+  return `${buildFileStoragePrefix(options)}/${sanitizePathSegment(options.materialId)}/${safeName}`;
 }
 
-export function buildPdfStoragePrefix(options: {
+export function buildFileStoragePrefix(options: {
   userId: string;
   sessionId: string;
 }) {

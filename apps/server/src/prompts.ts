@@ -236,6 +236,7 @@ export function buildChatPrompt(input: ReasoningChatRequest) {
   const requestType = input.requestType;
   const updateTarget = input.updateTarget;
   const preferredBlockType = input.preferredBlockType;
+  const allowLearnPanelUpdates = input.allowLearnPanelUpdates ?? false;
 
   const historyText = chatHistory
     .map((msg) => `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`)
@@ -248,8 +249,12 @@ export function buildChatPrompt(input: ReasoningChatRequest) {
     "",
     "Response type rules:",
     "- If the user is asking a question, seeking explanation, or wants to chat: responseType = 'chat', targetPanel = 'chat'",
-    "- If the user wants to create a new artifact (lesson, quiz, flashcards, etc.): responseType = 'artifact_create', targetPanel = 'learn'",
-    "- If the user wants to update, modify, or regenerate an existing artifact: responseType = 'artifact_update', targetPanel = 'learn'",
+    allowLearnPanelUpdates
+      ? "- If the user wants to create a new artifact (lesson, quiz, flashcards, etc.): responseType = 'artifact_create', targetPanel = 'learn'"
+      : "- Learn panel updates are disabled for this request. Keep responseType = 'chat' and targetPanel = 'chat'.",
+    allowLearnPanelUpdates
+      ? "- If the user wants to update, modify, or regenerate an existing artifact: responseType = 'artifact_update', targetPanel = 'learn'"
+      : "- Do not include any 'artifact' or 'plan' fields when learn panel updates are disabled.",
     "",
     "Request type hints (follow these unless they clearly conflict with the user's message):",
     "- new_content -> prefer artifact_create or a follow_up_question when ambiguous",
@@ -265,14 +270,20 @@ export function buildChatPrompt(input: ReasoningChatRequest) {
     "For 'chat' responses:",
     "- Provide a helpful, educational response in the 'content' field",
     "- Keep responses conversational and tailored to the learner's level",
+    "- If the learner expresses a broad desire to learn but has not chosen a format, ask one short question that helps them choose between chat guidance and a Learn artifact.",
+    allowLearnPanelUpdates
+      ? ""
+      : "- If the learner asks to create or change Learn panel content, explain it in chat instead of generating artifacts here.",
     "",
     "For 'artifact_create' or 'artifact_update' responses:",
-    "- Generate the appropriate block in the 'artifact' field",
-    "- Also provide a brief chat message in 'content' explaining what you're creating/updating",
-    "- If the user hasn't specified a topic or the request is ambiguous, use 'follow_up_question' block type",
-    "- If the user asks to update the topic list or plan, return the updated plan in the 'plan' field (targetPanel = 'learn')",
-    "- Any 'artifact' you include must be a complete tutor block object, not a partial draft or patch.",
-    "- Any 'plan' you include must be a complete plan object, not a partial diff.",
+    allowLearnPanelUpdates ? "- Generate the appropriate block in the 'artifact' field" : "",
+    allowLearnPanelUpdates ? "- Also provide a brief chat message in 'content' explaining what you're creating/updating" : "",
+    allowLearnPanelUpdates ? "- If the user hasn't specified a topic or the request is ambiguous, use 'follow_up_question' block type" : "",
+    allowLearnPanelUpdates
+      ? "- If the user asks to update the topic list or plan, return the updated plan in the 'plan' field (targetPanel = 'learn')"
+      : "",
+    allowLearnPanelUpdates ? "- Any 'artifact' you include must be a complete tutor block object, not a partial draft or patch." : "",
+    allowLearnPanelUpdates ? "- Any 'plan' you include must be a complete plan object, not a partial diff." : "",
     "",
     "If a current plan exists, reference relevant topics when generating artifacts.",
     "If current artifacts are provided, treat them as the authoritative source when answering questions or updating content.",

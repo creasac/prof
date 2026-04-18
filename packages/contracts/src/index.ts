@@ -155,9 +155,23 @@ export const groundingSourceSchema = z.object({
   uri: z.string().url(),
 });
 
-export const sourceMaterialKindSchema = z.enum(["url", "pdf"]);
+export const sourceMaterialKindSchema = z.enum(["url", "file"]);
+export const sourceMaterialFileKindSchema = z.enum([
+  "pdf",
+  "text",
+  "markdown",
+  "csv",
+  "json",
+  "code",
+  "image",
+  "document",
+  "spreadsheet",
+  "presentation",
+  "notebook",
+  "unknown",
+]);
 
-export const sourceMaterialSchema = z.object({
+const normalizedSourceMaterialSchema = z.object({
   id: z.string().min(1).max(40),
   kind: sourceMaterialKindSchema,
   title: z.string().min(1).max(240),
@@ -165,12 +179,15 @@ export const sourceMaterialSchema = z.object({
   sourceUrl: z.string().url().optional(),
   resolvedUrl: z.string().url().optional(),
   capture: z.string().min(1).max(80).optional(),
+  fileKind: sourceMaterialFileKindSchema.optional(),
   fileName: z.string().min(1).max(240).optional(),
   mimeType: z.string().min(1).max(120).optional(),
   sizeBytes: z.number().int().min(0).optional(),
   storageKey: z.string().min(1).max(400).optional(),
   textExcerpt: z.string().max(20000).optional().default(""),
 });
+
+export const sourceMaterialSchema = z.preprocess(normalizeSourceMaterialInput, normalizedSourceMaterialSchema);
 
 const learnSessionMessageChannelValues = ["chat", "live"] as const;
 const learnSessionMessageKindValues = ["message", "status"] as const;
@@ -662,6 +679,7 @@ export type FlashcardsBlock = z.infer<typeof flashcardsBlockSchema>;
 export type FollowUpQuestionBlock = z.infer<typeof followUpQuestionBlockSchema>;
 export type GroundingSource = z.infer<typeof groundingSourceSchema>;
 export type SourceMaterial = z.infer<typeof sourceMaterialSchema>;
+export type SourceMaterialFileKind = z.infer<typeof sourceMaterialFileKindSchema>;
 export type SourceMaterialKind = z.infer<typeof sourceMaterialKindSchema>;
 export type LessonBlock = z.infer<typeof lessonBlockSchema>;
 export type LessonBlueprint = z.infer<typeof lessonBlueprintSchema>;
@@ -689,6 +707,135 @@ export type ThemePreference = z.infer<typeof themePreferenceSchema>;
 export type AccountPreferences = z.infer<typeof accountPreferencesSchema>;
 export type PrivateProfile = z.infer<typeof privateProfileSchema>;
 export type VoiceSessionResponse = z.infer<typeof voiceSessionResponseSchema>;
+
+function normalizeSourceMaterialInput(value: unknown) {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const kind = typeof value.kind === "string" ? value.kind.trim().toLowerCase() : "";
+  if (kind === "pdf") {
+    return {
+      ...value,
+      kind: "file",
+      fileKind: "pdf",
+      mimeType: normalizeOptionalString(value.mimeType) || "application/pdf",
+    };
+  }
+
+  if (kind === "file" && typeof value.fileKind !== "string") {
+    const inferredFileKind = inferSourceMaterialFileKind(value);
+    if (inferredFileKind) {
+      return {
+        ...value,
+        fileKind: inferredFileKind,
+      };
+    }
+  }
+
+  return value;
+}
+
+function inferSourceMaterialFileKind(value: Record<string, unknown>) {
+  const mimeType = normalizeOptionalString(value.mimeType)?.toLowerCase() ?? "";
+  const fileName = normalizeOptionalString(value.fileName)?.toLowerCase() ?? "";
+  const extension = getFileExtension(fileName);
+
+  if (mimeType === "application/pdf" || extension === "pdf") {
+    return "pdf";
+  }
+
+  if (mimeType.startsWith("image/")) {
+    return "image";
+  }
+
+  if (mimeType === "text/markdown" || extension === "md" || extension === "markdown") {
+    return "markdown";
+  }
+
+  if (mimeType === "text/csv" || extension === "csv" || extension === "tsv") {
+    return "csv";
+  }
+
+  if (mimeType === "application/json" || extension === "json" || extension === "jsonl" || extension === "ndjson") {
+    return "json";
+  }
+
+  if (isCodeExtension(extension)) {
+    return "code";
+  }
+
+  if (mimeType.startsWith("text/") || extension === "txt") {
+    return "text";
+  }
+
+  if (extension === "doc" || extension === "docx") {
+    return "document";
+  }
+
+  if (extension === "xls" || extension === "xlsx") {
+    return "spreadsheet";
+  }
+
+  if (extension === "ppt" || extension === "pptx") {
+    return "presentation";
+  }
+
+  if (extension === "ipynb") {
+    return "notebook";
+  }
+
+  return fileName ? "unknown" : undefined;
+}
+
+function normalizeOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function getFileExtension(fileName: string) {
+  const lastDotIndex = fileName.lastIndexOf(".");
+  if (lastDotIndex < 0 || lastDotIndex === fileName.length - 1) {
+    return "";
+  }
+
+  return fileName.slice(lastDotIndex + 1);
+}
+
+function isCodeExtension(extension: string) {
+  return new Set([
+    "c",
+    "cc",
+    "cpp",
+    "cs",
+    "css",
+    "go",
+    "h",
+    "hpp",
+    "java",
+    "js",
+    "jsx",
+    "kt",
+    "mjs",
+    "php",
+    "pl",
+    "py",
+    "rb",
+    "rs",
+    "scala",
+    "sh",
+    "sql",
+    "swift",
+    "toml",
+    "ts",
+    "tsx",
+    "yaml",
+    "yml",
+  ]).has(extension);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 export type CoursePlan = z.infer<typeof coursePlanSchema>;
 export type FlatCoursePlan = z.infer<typeof flatCoursePlanSchema>;
 export type PhasedCoursePlan = z.infer<typeof phasedCoursePlanSchema>;
@@ -729,6 +876,7 @@ export const reasoningChatRequestSchema = z.object({
   currentTopic: planTopicSchema.optional(),
   currentArtifacts: z.array(tutorBlockSchema).max(3).optional().default([]),
   useWebSearch: z.boolean().optional().default(false),
+  allowLearnPanelUpdates: z.boolean().optional().default(false),
   sourceMaterials: z.array(sourceMaterialSchema).max(12).optional().default([]),
 });
 

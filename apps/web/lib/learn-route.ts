@@ -1,6 +1,6 @@
 import { createPublicId } from "@prof/contracts";
 
-export type TutorLaunchAction = "generate" | "live" | null;
+export type TutorLaunchAction = "chat" | "generate" | "live" | null;
 
 export type LearnRouteState = {
   courseOwnerUsername: string | null;
@@ -39,7 +39,9 @@ export function parseLearnRouteState(searchParams: SearchParamsLike): LearnRoute
     courseSlug: rawCourseSlug?.trim() ? rawCourseSlug.trim().toLowerCase() : null,
     goal: readParam(searchParams, "goal") ?? "",
     autoStartAction:
-      rawAutoStartAction === "generate" || rawAutoStartAction === "live" ? rawAutoStartAction : null,
+      rawAutoStartAction === "chat" || rawAutoStartAction === "generate" || rawAutoStartAction === "live"
+        ? rawAutoStartAction
+        : null,
   };
 }
 

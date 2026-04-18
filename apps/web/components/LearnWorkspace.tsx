@@ -3,6 +3,7 @@ import {
   appConfigSchema,
   lessonQuizResponseSchema,
   PROF_USAGE_CHANNEL_HEADER,
+  reasoningBlockResponseSchema,
   reasoningPlanStreamEventSchema,
   reasoningTopicBlockStreamEventSchema,
   voiceSessionResponseSchema,
@@ -39,6 +40,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { authClient } from "../lib/auth-client";
@@ -63,17 +65,22 @@ import { buildLearnHref, buildLearnQuizHref, createLearnSessionId, parseLearnRou
 import {
   attachUrlMaterial,
   deleteSourceMaterial,
-  uploadPdfMaterial,
+  uploadFileMaterial,
 } from "../lib/source-materials-api";
 import {
-  createPendingPdfAttachmentDrafts,
-  readPendingPdfAttachments,
-  writePendingPdfAttachments,
-  type PendingPdfAttachmentDraft,
-} from "../lib/pending-pdf-attachments";
+  createPendingAttachmentDrafts,
+  readPendingAttachmentDrafts,
+  writePendingAttachmentDrafts,
+  type PendingAttachmentDraft,
+} from "../lib/pending-attachment-drafts";
 import {
   buildLearnSessionMaterialFileHref,
+  getSourceMaterialFileLabelForFile,
   findAttachedUrlMaterial,
+  getSourceMaterialFileKindLabel,
+  isSourceMaterialFile,
+  isSupportedSourceMaterialFile,
+  SOURCE_MATERIAL_FILE_UPLOAD_MAX_BYTES,
   upsertSourceMaterial,
 } from "../lib/source-materials";
 import { createElevenLabsVoiceSession, type VoiceSessionHandle, type VoiceToolCallPayload } from "../lib/voice/elevenlabs";
@@ -99,7 +106,6 @@ const SPLITTER_WIDTH = 16;
 const CHAT_SCROLL_BOTTOM_THRESHOLD = 24;
 const LIVE_CONTEXT_MAX_CHARS = 1200;
 const LIVE_STATUS_PREFIX = "Status:";
-const PDF_FILE_MAX_BYTES = 15 * 1024 * 1024;
 const LIVE_ARTIFACT_KEYWORDS = [
   "create a lesson",
   "create lesson",
@@ -125,6 +131,13 @@ const LIVE_ARTIFACT_KEYWORDS = [
   "write a lesson",
   "write lesson",
 ];
+const ARTIFACT_REQUEST_PATTERNS = [
+  /\bquiz me on\b/,
+  /\btest me on\b/,
+  /\b(quizzes?|quizes?|quiz|flashcards?|lesson|lessons)\s+(on|about|for)\b/,
+  /\bessay prompts?\s+(on|about|for)\b/,
+  /\bfollow[- ]up questions?\s+(on|about|for)\b/,
+] as const;
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`]+/gi;
 
 const LIVE_REASONING_TOOL_NAME = "request_reasoning";
@@ -186,7 +199,7 @@ type StreamedTopicBlockPreview = {
   reason: string;
 };
 
-type PendingPdfDraft = PendingPdfAttachmentDraft & {
+type PendingAttachmentDraftState = PendingAttachmentDraft & {
   status: "staged" | "uploading" | "error";
 };
 
@@ -752,11 +765,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const searchParams = useSearchParams();
   const { data: authSession, isPending: isAuthPending } = authClient.useSession();
   const routeState = parseLearnRouteState(searchParams);
+  const hasPendingAutoStartRequest = Boolean(routeState.autoStartAction);
   const shouldPrefillPlannerInput = !routeState.autoStartAction;
   const autoStartKey = routeState.autoStartAction ? [routeState.autoStartAction, routeState.goal].join("|") : null;
 
   const [course, setCourse] = useState<CourseRef | null>(null);
-  const [goal, setGoal] = useState(() => routeState.goal);
+  const [goal, setGoal] = useState(() => (hasPendingAutoStartRequest ? "" : routeState.goal));
   const [plannerInput, setPlannerInput] = useState(() => (shouldPrefillPlannerInput ? routeState.goal : ""));
   const [isPlanning, setIsPlanning] = useState(false);
   const [plan, setPlan] = useState<CoursePlan | null>(null);
@@ -802,8 +816,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const [isResizingPane, setIsResizingPane] = useState(false);
   const [isSessionHydrated, setIsSessionHydrated] = useState(() => !sessionId);
   const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
-  const [pendingPdfDrafts, setPendingPdfDrafts] = useState<PendingPdfDraft[]>([]);
-  const [isPendingPdfDraftsHydrated, setIsPendingPdfDraftsHydrated] = useState(() => !sessionId);
+  const [pendingAttachmentDrafts, setPendingAttachmentDrafts] = useState<PendingAttachmentDraftState[]>([]);
+  const [isPendingAttachmentDraftsHydrated, setIsPendingAttachmentDraftsHydrated] = useState(() => !sessionId);
   const [removingMaterialIds, setRemovingMaterialIds] = useState<string[]>([]);
 
   const configRef = useRef<AppConfig | null>(null);
@@ -815,7 +829,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     goal: string;
   }>({
     sessionId: sessionId ?? null,
-    goal: normalizeGoalText(routeState.goal),
+    goal: normalizeGoalText(hasPendingAutoStartRequest ? "" : routeState.goal),
   });
   const liveSessionRef = useRef<VoiceSessionHandle | null>(null);
   const microphoneRef = useRef<MicrophoneSession | null>(null);
@@ -831,7 +845,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const generatedQuizRef = useRef<QuizBlock | null>(null);
   const topicArtifactsRef = useRef<Record<string, LearnTopicArtifacts>>({});
   const sourceMaterialsRef = useRef<SourceMaterial[]>([]);
-  const pendingPdfDraftsRef = useRef<PendingPdfDraft[]>([]);
+  const pendingAttachmentDraftsRef = useRef<PendingAttachmentDraftState[]>([]);
   const liveMessagesRef = useRef<ChatMessage[]>([]);
   const liveAudioStatusRef = useRef(false);
   const liveToolInFlightRef = useRef(false);
@@ -890,12 +904,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     options.setter?.(options.error instanceof Error ? options.error.message : options.fallback);
   }
 
-  function commitPendingPdfDrafts(nextDrafts: PendingPdfDraft[]) {
-    pendingPdfDraftsRef.current = nextDrafts;
-    setPendingPdfDrafts(nextDrafts);
+  function commitPendingAttachmentDrafts(nextDrafts: PendingAttachmentDraftState[]) {
+    pendingAttachmentDraftsRef.current = nextDrafts;
+    setPendingAttachmentDrafts(nextDrafts);
 
     if (sessionId) {
-      writePendingPdfAttachments(
+      writePendingAttachmentDrafts(
         sessionId,
         nextDrafts.map((draft) => ({
           id: draft.id,
@@ -905,8 +919,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
   }
 
-  function updatePendingPdfDrafts(updater: (current: PendingPdfDraft[]) => PendingPdfDraft[]) {
-    commitPendingPdfDrafts(updater(pendingPdfDraftsRef.current));
+  function updatePendingAttachmentDrafts(
+    updater: (current: PendingAttachmentDraftState[]) => PendingAttachmentDraftState[],
+  ) {
+    commitPendingAttachmentDrafts(updater(pendingAttachmentDraftsRef.current));
   }
 
   useEffect(() => {
@@ -960,7 +976,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }, [course]);
 
   useEffect(() => {
-    const nextGoal = normalizeGoalText(routeState.goal);
+    const nextGoal = normalizeGoalText(routeState.autoStartAction ? "" : routeState.goal);
 
     if (sessionId && nextGoal) {
       routeGoalSeedRef.current = {
@@ -1011,21 +1027,21 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   }, [sourceMaterials]);
 
   useEffect(() => {
-    setIsPendingPdfDraftsHydrated(false);
+    setIsPendingAttachmentDraftsHydrated(false);
 
     if (!sessionId) {
-      commitPendingPdfDrafts([]);
-      setIsPendingPdfDraftsHydrated(true);
+      commitPendingAttachmentDrafts([]);
+      setIsPendingAttachmentDraftsHydrated(true);
       return;
     }
 
-    commitPendingPdfDrafts(readPendingPdfAttachments(sessionId).map(createPendingPdfDraft));
-    setIsPendingPdfDraftsHydrated(true);
+    commitPendingAttachmentDrafts(readPendingAttachmentDrafts(sessionId).map(createPendingAttachmentDraft));
+    setIsPendingAttachmentDraftsHydrated(true);
   }, [sessionId]);
 
   useEffect(() => {
-    setIsUploadingMaterial(pendingPdfDrafts.some((draft) => draft.status === "uploading"));
-  }, [pendingPdfDrafts]);
+    setIsUploadingMaterial(pendingAttachmentDrafts.some((draft) => draft.status === "uploading"));
+  }, [pendingAttachmentDrafts]);
 
   useEffect(() => {
     liveMessagesRef.current = liveMessages;
@@ -1048,22 +1064,22 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     if (!authSession?.user?.id) {
-      if (pendingPdfDrafts.length > 0) {
-        setMaterialError((current) => current ?? "Sign in to attach PDFs to a course.");
+      if (pendingAttachmentDrafts.length > 0) {
+        setMaterialError((current) => current ?? "Sign in to attach files to a course.");
       }
       return;
     }
 
-    if (pendingPdfDrafts.some((draft) => draft.status === "uploading")) {
+    if (pendingAttachmentDrafts.some((draft) => draft.status === "uploading")) {
       return;
     }
 
-    const nextDraft = pendingPdfDrafts.find((draft) => draft.status === "staged");
+    const nextDraft = pendingAttachmentDrafts.find((draft) => draft.status === "staged");
     if (!nextDraft) {
       return;
     }
 
-    updatePendingPdfDrafts((current) =>
+    updatePendingAttachmentDrafts((current) =>
       current.map((draft) => (draft.id === nextDraft.id ? { ...draft, status: "uploading" } : draft)),
     );
     setMaterialError(null);
@@ -1072,24 +1088,24 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
     void (async () => {
       try {
-        if (nextDraft.file.size > PDF_FILE_MAX_BYTES) {
-          throw new Error("PDF exceeds the 15 MB limit.");
+        if (nextDraft.file.size > SOURCE_MATERIAL_FILE_UPLOAD_MAX_BYTES) {
+          throw new Error("File exceeds the 15 MB limit.");
         }
 
-        const material = await uploadPdfMaterial(sessionId, nextDraft.file);
+        const material = await uploadFileMaterial(sessionId, nextDraft.file);
         if (cancelled) {
           return;
         }
 
         setSourceMaterials((current) => upsertSourceMaterial(current, material));
-        updatePendingPdfDrafts((current) => current.filter((draft) => draft.id !== nextDraft.id));
+        updatePendingAttachmentDrafts((current) => current.filter((draft) => draft.id !== nextDraft.id));
       } catch (error) {
         if (cancelled) {
           return;
         }
 
-        setMaterialError(error instanceof Error ? error.message : "Failed to upload PDF.");
-        updatePendingPdfDrafts((current) =>
+        setMaterialError(error instanceof Error ? error.message : "Failed to upload file.");
+        updatePendingAttachmentDrafts((current) =>
           current.map((draft) => (draft.id === nextDraft.id ? { ...draft, status: "error" } : draft)),
         );
       }
@@ -1098,7 +1114,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [authSession?.user?.id, isAuthPending, isSessionHydrated, pendingPdfDrafts, sessionId]);
+  }, [authSession?.user?.id, isAuthPending, isSessionHydrated, pendingAttachmentDrafts, sessionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1311,15 +1327,15 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       return;
     }
 
-    if (!isPendingPdfDraftsHydrated) {
+    if (!isPendingAttachmentDraftsHydrated) {
       return;
     }
 
-    if (pendingPdfDrafts.some((draft) => draft.status === "uploading")) {
+    if (pendingAttachmentDrafts.some((draft) => draft.status === "uploading")) {
       return;
     }
 
-    if (pendingPdfDrafts.some((draft) => draft.status === "staged")) {
+    if (pendingAttachmentDrafts.some((draft) => draft.status === "staged")) {
       if (isAuthPending) {
         return;
       }
@@ -1330,7 +1346,6 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     autoStartConsumedRef.current = autoStartKey;
-    setGoal(routeState.goal);
     setPlannerInput("");
 
     router.replace(
@@ -1344,11 +1359,13 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       { scroll: false },
     );
 
+    if (routeState.autoStartAction === "chat") {
+      void submitChatRequest(routeState.goal);
+      return;
+    }
+
     if (routeState.autoStartAction === "generate") {
-      void submitPlannerRequest({
-        goalOverride: routeState.goal,
-        inputOverride: routeState.goal,
-      });
+      void routeTextRequest(routeState.goal);
       return;
     }
 
@@ -1363,8 +1380,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     router,
     course,
     isAuthPending,
-    isPendingPdfDraftsHydrated,
-    pendingPdfDrafts,
+    isPendingAttachmentDraftsHydrated,
+    pendingAttachmentDrafts,
     routeState.courseOwnerUsername,
     routeState.courseSlug,
     sessionId,
@@ -2057,20 +2074,23 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     setGoal(trimmed);
   }
 
-  async function handleAttachPdfFiles(files: File[]) {
+  async function handleAttachFiles(files: File[]) {
     if (!sessionId) {
-      setMaterialError("Start a learn session before attaching PDFs.");
+      setMaterialError("Start a learn session before attaching files.");
       return;
     }
 
-    const pdfFiles = files.filter(isPdfFile);
-    if (pdfFiles.length === 0) {
-      setMaterialError("Only PDF files are supported.");
+    const supportedFiles = files.filter(isSupportedSourceMaterialFile);
+    if (supportedFiles.length === 0) {
+      setMaterialError("Attach PDF, text, markdown, CSV, JSON, code, PNG, JPG, or WEBP files.");
       return;
     }
 
     setMaterialError(null);
-    updatePendingPdfDrafts((current) => [...current, ...createPendingPdfAttachmentDrafts(pdfFiles).map(createPendingPdfDraft)]);
+    updatePendingAttachmentDrafts((current) => [
+      ...current,
+      ...createPendingAttachmentDrafts(supportedFiles).map(createPendingAttachmentDraft),
+    ]);
   }
 
   async function handleRemoveAttachedMaterial(materialId: string) {
@@ -2086,14 +2106,14 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       await deleteSourceMaterial(sessionId, materialId, material?.storageKey);
       setSourceMaterials((current) => current.filter((material) => material.id !== materialId));
     } catch (error) {
-      setMaterialError(error instanceof Error ? error.message : "Failed to remove PDF.");
+      setMaterialError(error instanceof Error ? error.message : "Failed to remove file.");
     } finally {
       setRemovingMaterialIds((current) => current.filter((id) => id !== materialId));
     }
   }
 
-  function handleRemovePendingPdfDraft(draftId: string) {
-    updatePendingPdfDrafts((current) => current.filter((draft) => draft.id !== draftId));
+  function handleRemovePendingAttachmentDraft(draftId: string) {
+    updatePendingAttachmentDrafts((current) => current.filter((draft) => draft.id !== draftId));
   }
 
   function handleRemoveComposerAttachment(attachmentId: string) {
@@ -2103,7 +2123,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     if (attachmentId.startsWith("draft:")) {
-      handleRemovePendingPdfDraft(attachmentId.slice("draft:".length));
+      handleRemovePendingAttachmentDraft(attachmentId.slice("draft:".length));
     }
   }
 
@@ -2115,23 +2135,12 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
     const currentArtifacts = collectCurrentArtifacts(generatedBlock, generatedQuiz);
     const currentTopic = resolveCurrentTopic(plan);
-    const clarificationIntent: TextReasoningIntent | null = planClarification
-      ? {
-          requestType: "update_content",
-          updateTarget: "plan",
-        }
-      : null;
-    const intent = classifyTextIntent(input) ?? clarificationIntent;
-    const requestType = intent?.requestType ?? "general_query";
-    const shouldApplyLearnUpdates = requestType !== "general_query";
-    const preferredType = intent?.preferredBlockType;
     const currentTopicId = currentTopic?.id ?? selectedTopicId ?? generatedTopicId;
     const userMessage = createSessionMessage({
       role: "user",
       content: trimmedInput,
       channel: "chat",
-      requestType,
-      updateTarget: intent?.updateTarget,
+      requestType: "general_query",
       topicId: currentTopicId ?? null,
     });
 
@@ -2148,14 +2157,13 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         headers: createUsageHeaders("text"),
         body: JSON.stringify({
           message: trimmedInput,
-          requestType,
-          updateTarget: intent?.updateTarget,
-          preferredBlockType: preferredType,
+          requestType: "general_query",
           chatHistory: chatMessages,
           currentPlan: plan ?? undefined,
           currentTopic: currentTopic ?? undefined,
           currentArtifacts: currentArtifacts.length > 0 ? currentArtifacts : undefined,
           useWebSearch,
+          allowLearnPanelUpdates: false,
           sourceMaterials: requestSourceMaterials,
         }),
       });
@@ -2182,32 +2190,147 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           }),
         ]);
       }
-
-      if (shouldApplyLearnUpdates && (data.artifact || data.plan)) {
-        seedLearnGoal(trimmedInput);
-      }
-
-      if (shouldApplyLearnUpdates && data.targetPanel === "learn" && data.artifact) {
-        const nextTopicId = currentTopicId ?? null;
-        setGeneratedBlock(data.artifact);
-        setGeneratedTopicId(nextTopicId);
-        setBlockSources(data.sources ?? []);
-        setIsLearnPanelCollapsed(false);
-
-        if (nextTopicId) {
-          setTopicArtifacts((current) => updateTopicArtifacts(current, nextTopicId, { block: data.artifact, quiz: null }));
-        }
-      }
-
-      if (shouldApplyLearnUpdates && data.targetPanel === "learn" && data.plan) {
-        setPlan(data.plan);
-        setPlanSources(data.sources ?? []);
-      }
     } catch (error) {
       handleUsageAwareError({
         channel: "text",
         error,
         fallback: "Chat request failed.",
+        setter: setPlannerError,
+      });
+    } finally {
+      setIsTextResponsePending(false);
+    }
+  }
+
+  function buildArtifactLearnerContext() {
+    return buildLiveContextDigest({
+      goal: goalRef.current ?? null,
+      plan: planRef.current ?? null,
+      currentTopic: resolveCurrentTopic(planRef.current ?? null),
+      artifacts: buildCurrentArtifactsSnapshot(),
+    });
+  }
+
+  function applyGeneratedArtifactBlock(block: TutorBlock, sources: GroundingSource[]) {
+    setPlanClarification(null);
+    setSelectedTopicId(null);
+    setGeneratedBlock(block);
+    setGeneratedTopicId(null);
+    setBlockSources(sources);
+    setIsLearnPanelCollapsed(false);
+    setTopicError(null);
+    setGeneratedQuizError(null);
+    setQuizProgress(null);
+
+    if (block.type === "quiz") {
+      setGeneratedQuiz(block);
+      setGeneratedQuizTopicId(null);
+      return;
+    }
+
+    setGeneratedQuiz(null);
+    setGeneratedQuizTopicId(null);
+  }
+
+  function buildArtifactCreatedMessage(block: TutorBlock) {
+    switch (block.type) {
+      case "quiz":
+        return `I created a quiz in the Learn panel. ${block.questions.length} questions are ready.`;
+      case "flashcards":
+        return "I created flashcards in the Learn panel.";
+      case "lesson":
+        return "I created a lesson in the Learn panel.";
+      case "essay_prompt":
+        return "I created an essay prompt in the Learn panel.";
+      case "follow_up_question":
+        return block.prompt;
+      default:
+        return "I created new learning content in the Learn panel.";
+    }
+  }
+
+  async function submitArtifactRequest(options: {
+    input: string;
+    preferredBlockType?: TutorBlockType;
+  }) {
+    const trimmedInput = options.input.trim();
+    if (!trimmedInput) {
+      return;
+    }
+
+    const currentTopic = resolveCurrentTopic(plan);
+    const currentTopicId = currentTopic?.id ?? selectedTopicId ?? generatedTopicId;
+    const userMessage = createSessionMessage({
+      role: "user",
+      content: trimmedInput,
+      channel: "chat",
+      requestType: "new_content",
+      topicId: currentTopicId ?? null,
+    });
+
+    setChatMessages((prev) => [...prev, userMessage]);
+    setPlannerInput("");
+    setPlannerError(null);
+    setIsTextResponsePending(true);
+
+    try {
+      const useWebSearch = await getAutomaticSearchEnabled();
+      const requestSourceMaterials = await ensureUrlMaterialsAttached(trimmedInput);
+      const response = await fetchApi("/api/reasoning/block", {
+        method: "POST",
+        headers: createUsageHeaders("text"),
+        body: JSON.stringify({
+          goal: trimmedInput,
+          learnerContext: buildArtifactLearnerContext(),
+          preferredBlockType: options.preferredBlockType,
+          useWebSearch,
+          sourceMaterials: requestSourceMaterials,
+        }),
+      });
+
+      if (!response.ok) {
+        throw await createApiError(response, "Artifact generation failed.");
+      }
+
+      const payload = reasoningBlockResponseSchema.parse(await response.json());
+      const block = payload.block;
+      clearUsageAlert("text");
+
+      if (block.type === "follow_up_question") {
+        setChatMessages((prev) => [
+          ...prev,
+          createSessionMessage({
+            role: "assistant",
+            content: block.prompt,
+            channel: "chat",
+            sources: payload.sources ?? [],
+            responseType: "chat",
+            targetPanel: "chat",
+            topicId: currentTopicId ?? null,
+          }),
+        ]);
+        return;
+      }
+
+      seedLearnGoal(trimmedInput);
+      applyGeneratedArtifactBlock(block, payload.sources ?? []);
+      setChatMessages((prev) => [
+        ...prev,
+        createSessionMessage({
+          role: "assistant",
+          content: buildArtifactCreatedMessage(block),
+          channel: "chat",
+          sources: payload.sources ?? [],
+          responseType: "artifact_create",
+          targetPanel: "learn",
+          topicId: null,
+        }),
+      ]);
+    } catch (error) {
+      handleUsageAwareError({
+        channel: "text",
+        error,
+        fallback: "Artifact generation failed.",
         setter: setPlannerError,
       });
     } finally {
@@ -2559,10 +2682,10 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
   function derivePreferredBlockType(message: string): TutorBlockType | undefined {
     const lower = message.toLowerCase();
-    if (lower.includes("quiz")) {
+    if (lower.includes("quiz") || lower.includes("test me")) {
       return "quiz";
     }
-    if (lower.includes("flashcard")) {
+    if (lower.includes("flashcard") || lower.includes("flash cards")) {
       return "flashcards";
     }
     if (lower.includes("essay") || lower.includes("prompt")) {
@@ -2614,7 +2737,21 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     const preferredBlockType = derivePreferredBlockType(trimmed);
 
     const updateVerbs = ["update", "change", "edit", "revise", "modify", "regenerate", "replace", "remove", "add"];
-    const createVerbs = ["create", "generate", "make", "build", "design", "draft", "write", "outline"];
+    const createVerbs = [
+      "create",
+      "generate",
+      "make",
+      "build",
+      "design",
+      "draft",
+      "write",
+      "outline",
+      "prepare",
+      "give",
+      "provide",
+      "want",
+      "need",
+    ];
     const explicitPlanPhrases = [
       "topic list",
       "topics list",
@@ -2637,6 +2774,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
     const hasExplicitCreatePhrase = LIVE_ARTIFACT_KEYWORDS.some((keyword) => lower.includes(keyword));
     const hasCreateVerb = createVerbs.some((verb) => hasWord(verb));
+    const hasArtifactRequestPattern = ARTIFACT_REQUEST_PATTERNS.some((pattern) => pattern.test(lower));
     const mentionsArtifact =
       Boolean(preferredBlockType) ||
       lower.includes("lesson") ||
@@ -2644,7 +2782,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
       lower.includes("flashcard") ||
       lower.includes("topic");
     const mentionsPlan = explicitPlanPhrases.some((phrase) => lower.includes(phrase));
-    const wantsCreate = hasExplicitCreatePhrase || mentionsPlan || (hasCreateVerb && mentionsArtifact);
+    const wantsCreate =
+      hasExplicitCreatePhrase || mentionsPlan || hasArtifactRequestPattern || (hasCreateVerb && mentionsArtifact);
 
     if (wantsCreate) {
       return {
@@ -2658,6 +2797,23 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
 
   function shouldHandlePlan(intent: LiveReasoningIntent) {
     return intent.updateTarget === "plan" || intent.updateTarget === "topic_list";
+  }
+
+  function shouldGenerateArtifactDirectly(message: string, intent: TextReasoningIntent | null) {
+    if (!intent || intent.requestType !== "new_content" || shouldHandlePlan(intent)) {
+      return false;
+    }
+
+    const lower = message.trim().toLowerCase();
+    if (!lower) {
+      return false;
+    }
+
+    return (
+      Boolean(intent.preferredBlockType) ||
+      ARTIFACT_REQUEST_PATTERNS.some((pattern) => pattern.test(lower)) ||
+      LIVE_ARTIFACT_KEYWORDS.some((keyword) => lower.includes(keyword))
+    );
   }
 
   function collectCurrentArtifacts(block: TutorBlock | null, quiz: QuizBlock | null) {
@@ -2753,6 +2909,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
         currentTopic: currentTopic ?? undefined,
         currentArtifacts: currentArtifacts.length > 0 ? currentArtifacts : undefined,
         useWebSearch,
+        allowLearnPanelUpdates: true,
         sourceMaterials: requestSourceMaterials,
       }),
     });
@@ -2805,6 +2962,41 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     }
 
     return data;
+  }
+
+  async function routeTextRequest(input: string) {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const intent = classifyTextIntent(trimmed);
+
+    if (intent && shouldHandlePlan(intent)) {
+      await submitPlannerRequest({
+        goalOverride: goalRef.current || trimmed,
+        inputOverride: trimmed,
+      });
+      return;
+    }
+
+    if (intent && shouldGenerateArtifactDirectly(trimmed, intent)) {
+      await submitArtifactRequest({
+        input: trimmed,
+        preferredBlockType: intent.preferredBlockType,
+      });
+      return;
+    }
+
+    if (planClarificationRef.current) {
+      await submitPlannerRequest({
+        goalOverride: goalRef.current || trimmed,
+        inputOverride: trimmed,
+      });
+      return;
+    }
+
+    await submitChatRequest(trimmed);
   }
 
   async function performLiveAction(options: {
@@ -3500,7 +3692,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
     await startMicrophone();
   }
 
-  function launchSessionRoute(action: "generate" | "live") {
+  function launchSessionRoute(action: "chat" | "generate" | "live") {
     if (sessionId) {
       return false;
     }
@@ -3638,26 +3830,47 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
   const showMuteControl = liveStatus === "Connected";
   const renderedGeneratedBlock = streamedGeneratedBlock ? buildStreamedTopicBlock(streamedGeneratedBlock) : generatedBlock;
   const renderedBlockSources = streamedGeneratedBlock ? [] : blockSources;
+  const showLearnPaneHero =
+    !isPlanning &&
+    !hasStreamingPlan &&
+    !plan &&
+    !planClarification &&
+    !renderedGeneratedBlock &&
+    !generatedQuiz &&
+    !plannerError &&
+    !topicError;
+  const showPlannerSection =
+    isPlanning || hasStreamingPlan || Boolean(plan) || Boolean(planClarification) || Boolean(plannerError);
+  const generatedSectionStyle = showPlannerSection ? styles.generatedSection : styles.generatedSectionStandalone;
   const showGeneratedTopicHeader = !renderedGeneratedBlock || !("title" in renderedGeneratedBlock);
+  const generatedSectionTitle = showPlannerSection
+    ? selectedTopic
+      ? selectedTopic.title
+      : "Generated topic"
+    : "Generated artifact";
   const hasCurrentQuiz = Boolean(
-    !streamedGeneratedBlock && generatedQuiz && generatedQuizTopicId && generatedQuizTopicId === generatedTopicId,
+    !streamedGeneratedBlock &&
+      generatedQuiz &&
+      ((generatedQuizTopicId != null && generatedQuizTopicId === generatedTopicId) ||
+        (generatedQuizTopicId == null && generatedTopicId == null)),
   );
   const showQuizLauncher =
     Boolean(sessionId) &&
     !streamedGeneratedBlock &&
     (renderedGeneratedBlock?.type === "lesson" || renderedGeneratedBlock?.type === "quiz");
-  const pdfSourceMaterials = sourceMaterials.filter((material) => material.kind === "pdf");
-  const urlSourceMaterials = sourceMaterials.filter((material) => material.kind === "url");
+  const fileSourceMaterials = sourceMaterials.filter(isSourceMaterialFile);
   const composerAttachments = [
-    ...pdfSourceMaterials.map((material) => ({
+    ...fileSourceMaterials.map((material) => ({
       id: `material:${material.id}`,
       title: material.fileName ?? material.title,
+      label: getSourceMaterialFileKindLabel(material.fileKind),
       removable: !removingMaterialIds.includes(material.id),
       uploading: removingMaterialIds.includes(material.id),
     })),
-    ...pendingPdfDrafts.map((draft) => ({
+    ...pendingAttachmentDrafts.map((draft) => ({
       id: `draft:${draft.id}`,
       title: draft.file.name,
+      label: getSourceMaterialFileLabelForFile(draft.file),
       removable: draft.status !== "uploading",
       uploading: draft.status === "uploading",
       invalid: draft.status === "error",
@@ -3696,116 +3909,137 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
           </div>
 
           <div className="learn-scroll" style={styles.panelBody}>
-            <section style={styles.learnPanelShell}>
-              <button
-                aria-expanded={!isLearnPanelCollapsed}
-                style={styles.learnPanelHeader}
-                type="button"
-                onClick={() => setIsLearnPanelCollapsed((current) => !current)}
-              >
-                <span style={styles.learnPanelToggle}>
-                  <Icon name={isLearnPanelCollapsed ? "chevronDown" : "chevronUp"} size={18} />
-                  <span>{collectionLabel}</span>
-                </span>
+            {showLearnPaneHero ? (
+              <section style={styles.learnPaneHero}>
+                <Image
+                  src="/icon.png"
+                  alt="Prof."
+                  width={120}
+                  height={120}
+                  style={styles.learnPaneHeroLogo}
+                  priority
+                  unoptimized
+                />
+                <h2 style={styles.learnPaneHeroTagline}>knowledge liberates</h2>
+              </section>
+            ) : (
+              <>
+                {showPlannerSection ? (
+                  <section style={styles.learnPanelShell}>
+                    <button
+                      aria-expanded={!isLearnPanelCollapsed}
+                      style={styles.learnPanelHeader}
+                      type="button"
+                      onClick={() => setIsLearnPanelCollapsed((current) => !current)}
+                    >
+                      <span style={styles.learnPanelToggle}>
+                        <Icon name={isLearnPanelCollapsed ? "chevronDown" : "chevronUp"} size={18} />
+                        <span>{collectionLabel}</span>
+                      </span>
 
-                {isPlanning || learnTopicCount > 0 ? (
-                  <span style={styles.learnPanelMeta}>
-                    {isPlanning
-                      ? learnTopicCount > 0
-                        ? `${learnTopicCount} streaming`
-                        : "Generating..."
-                      : `${learnTopicCount}`}
-                  </span>
+                      {isPlanning || learnTopicCount > 0 ? (
+                        <span style={styles.learnPanelMeta}>
+                          {isPlanning
+                            ? learnTopicCount > 0
+                              ? `${learnTopicCount} streaming`
+                              : "Generating..."
+                            : `${learnTopicCount}`}
+                        </span>
+                      ) : null}
+                    </button>
+
+                    {!isLearnPanelCollapsed ? (
+                      <div style={styles.learnPanelContent}>
+                        {plannerError ? <p style={styles.errorText}>{plannerError}</p> : null}
+
+                        <PlannerView
+                          plan={plan}
+                          clarification={planClarification}
+                          streamedPlanTitle={streamedPlanTitle}
+                          streamedTopics={streamedTopics}
+                          selectedTopicId={selectedTopicId}
+                          generatedTopicId={generatedTopicId}
+                          quizResultsByTopic={quizResultsByTopic}
+                          isPlanning={isPlanning}
+                          isGeneratingTopic={isGeneratingTopic}
+                          onSelectTopic={showTopicArtifacts}
+                          onGenerateTopic={() => void generateSelectedTopic()}
+                        />
+                      </div>
+                    ) : null}
+                  </section>
                 ) : null}
-              </button>
 
-              {!isLearnPanelCollapsed ? (
-                <div style={styles.learnPanelContent}>
-                  {plannerError ? <p style={styles.errorText}>{plannerError}</p> : null}
-
-                  <PlannerView
-                    plan={plan}
-                    clarification={planClarification}
-                    streamedPlanTitle={streamedPlanTitle}
-                    streamedTopics={streamedTopics}
-                    selectedTopicId={selectedTopicId}
-                    generatedTopicId={generatedTopicId}
-                    quizResultsByTopic={quizResultsByTopic}
-                    isPlanning={isPlanning}
-                    isGeneratingTopic={isGeneratingTopic}
-                    onSelectTopic={showTopicArtifacts}
-                    onGenerateTopic={() => void generateSelectedTopic()}
-                  />
-                </div>
-              ) : null}
-            </section>
-
-            <section ref={generatedSectionRef} style={styles.generatedSection}>
-              {showGeneratedTopicHeader ? (
-                <div style={styles.generatedHeader}>
-                  <h2 style={styles.generatedTitle}>{selectedTopic ? selectedTopic.title : "Generated topic"}</h2>
-                </div>
-              ) : null}
-
-              {topicError ? <p style={styles.errorText}>{topicError}</p> : null}
-
-              {renderedGeneratedBlock ? (
-                <>
-                  <BlockView block={renderedGeneratedBlock} sources={renderedBlockSources} />
-
-                  {showQuizLauncher ? (
-                    <div style={styles.quizLauncherCard}>
-                      <div style={styles.quizLauncherCopy}>
-                        <p style={styles.quizLauncherTitle}>Quiz</p>
-                        <p style={styles.quizLauncherText}>
-                          {renderedGeneratedBlock.type === "lesson"
-                            ? isGeneratingQuiz
-                              ? "Preparing quiz..."
-                              : hasCurrentQuiz
-                                ? `${generatedQuiz?.questions.length ?? 0} questions ready.`
-                                : generatedQuizError ?? "Quiz is not ready yet."
-                            : hasCurrentQuiz
-                              ? `${generatedQuiz?.questions.length ?? 0} questions ready.`
-                              : "Open the quiz to start."}
-                        </p>
-                      </div>
-
-                      <div style={styles.quizLauncherActions}>
-                        {renderedGeneratedBlock.type === "lesson" && generatedQuizError ? (
-                          <button type="button" style={styles.controlButton} onClick={retryGeneratedQuiz}>
-                            Retry
-                          </button>
-                        ) : null}
-
-                        <button
-                          type="button"
-                          style={{
-                            ...styles.controlButton,
-                            ...styles.controlButtonActive,
-                            ...(hasCurrentQuiz ? null : styles.controlButtonDisabled),
-                          }}
-                          onClick={openGeneratedQuiz}
-                          disabled={!hasCurrentQuiz}
-                        >
-                          {renderedGeneratedBlock.type === "lesson" ? "Quiz" : "Start quiz"}
-                        </button>
-                      </div>
+                <section ref={generatedSectionRef} style={generatedSectionStyle}>
+                  {showGeneratedTopicHeader ? (
+                    <div style={styles.generatedHeader}>
+                      <h2 style={styles.generatedTitle}>{generatedSectionTitle}</h2>
                     </div>
                   ) : null}
-                </>
-              ) : (
-                <div style={styles.emptyState}>
-                  <p style={styles.emptyTitle}>{selectedTopic ? "The selected topic is ready." : "No topic generated yet."}</p>
-                  <p style={styles.emptyText}>
-                      {selectedTopic
-                        ? "Use Generate to materialize just this topic."
-                        : isPlanning
-                          ? "Wait for topics to finish streaming, then select one."
-                          : "Generate topics, select one, and then generate the lesson here."}
-                  </p>
-                </div>
-              )}
-            </section>
+
+                  {topicError ? <p style={styles.errorText}>{topicError}</p> : null}
+
+                  {renderedGeneratedBlock ? (
+                    <>
+                      <BlockView block={renderedGeneratedBlock} sources={renderedBlockSources} />
+
+                      {showQuizLauncher ? (
+                        <div style={styles.quizLauncherCard}>
+                          <div style={styles.quizLauncherCopy}>
+                            <p style={styles.quizLauncherTitle}>Quiz</p>
+                            <p style={styles.quizLauncherText}>
+                              {renderedGeneratedBlock.type === "lesson"
+                                ? isGeneratingQuiz
+                                  ? "Preparing quiz..."
+                                  : hasCurrentQuiz
+                                    ? `${generatedQuiz?.questions.length ?? 0} questions ready.`
+                                    : generatedQuizError ?? "Quiz is not ready yet."
+                                : hasCurrentQuiz
+                                  ? `${generatedQuiz?.questions.length ?? 0} questions ready.`
+                                  : "Open the quiz to start."}
+                            </p>
+                          </div>
+
+                          <div style={styles.quizLauncherActions}>
+                            {renderedGeneratedBlock.type === "lesson" && generatedQuizError ? (
+                              <button type="button" style={styles.controlButton} onClick={retryGeneratedQuiz}>
+                                Retry
+                              </button>
+                            ) : null}
+
+                            <button
+                              type="button"
+                              style={{
+                                ...styles.controlButton,
+                                ...styles.controlButtonActive,
+                                ...(hasCurrentQuiz ? null : styles.controlButtonDisabled),
+                              }}
+                              onClick={openGeneratedQuiz}
+                              disabled={!hasCurrentQuiz}
+                            >
+                              {renderedGeneratedBlock.type === "lesson" ? "Quiz" : "Start quiz"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div style={styles.emptyState}>
+                      <p style={styles.emptyTitle}>
+                        {selectedTopic ? "The selected topic is ready." : "No topic generated yet."}
+                      </p>
+                      <p style={styles.emptyText}>
+                        {selectedTopic
+                          ? "Use Generate to materialize just this topic."
+                          : isPlanning
+                            ? "Wait for topics to finish streaming, then select one."
+                            : "Generate topics, select one, and then generate the lesson here."}
+                      </p>
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
           </div>
         </article>
 
@@ -3973,15 +4207,15 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
             ) : null}
 	          </div>
 
-          {urlSourceMaterials.length > 0 || materialError ? (
+          {sourceMaterials.length > 0 || materialError ? (
             <div style={styles.materialsPanelWrap}>
               <SourceMaterialsPanel
                 title="Course Materials"
-                materials={urlSourceMaterials}
-                emptyText="No attached links yet."
+                materials={sourceMaterials}
+                emptyText="No attached materials yet."
                 errorText={materialError}
                 resolveFileHref={(material) =>
-                  sessionId && material.kind === "pdf"
+                  sessionId && material.kind === "file"
                     ? buildLearnSessionMaterialFileHref(sessionId, material.id)
                     : null
                 }
@@ -4017,7 +4251,7 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
                   return;
                 }
 
-                void submitChatRequest(inputSnapshot);
+                void routeTextRequest(inputSnapshot);
               }}
               onLive={() => {
                 if (launchSessionRoute("live")) {
@@ -4028,8 +4262,8 @@ export function LearnWorkspace({ sessionId }: LearnWorkspaceProps) {
               }}
               generateLabel={isPlanning ? "Stop" : "Send"}
               showAttach={Boolean(sessionId)}
-              onAttachPdfFiles={(files) => {
-                void handleAttachPdfFiles(files);
+              onAttachFiles={(files) => {
+                void handleAttachFiles(files);
               }}
               onRemoveAttachment={handleRemoveComposerAttachment}
               attachments={composerAttachments}
@@ -4225,11 +4459,7 @@ function base64ToBytes(base64: string) {
   return bytes;
 }
 
-function isPdfFile(file: File) {
-  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-}
-
-function createPendingPdfDraft(draft: PendingPdfAttachmentDraft): PendingPdfDraft {
+function createPendingAttachmentDraft(draft: PendingAttachmentDraft): PendingAttachmentDraftState {
   return {
     ...draft,
     status: "staged",
@@ -4501,6 +4731,29 @@ const styles: Record<string, CSSProperties> = {
     boxShadow: "0 12px 24px rgba(15, 23, 42, 0.04)",
     backdropFilter: "blur(12px)",
   },
+  learnPaneHero: {
+    minHeight: "min(52vh, 420px)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "32px 20px 72px",
+    textAlign: "center",
+  },
+  learnPaneHeroLogo: {
+    width: "88px",
+    height: "auto",
+  },
+  learnPaneHeroTagline: {
+    margin: 0,
+    fontSize: "clamp(1.38rem, 2.8vw, 1.82rem)",
+    lineHeight: 1,
+    fontWeight: 550,
+    color: "var(--warm-accent)",
+    letterSpacing: "0.01em",
+    textAlign: "center",
+  },
   learnPanelHeader: {
     display: "flex",
     justifyContent: "space-between",
@@ -4568,6 +4821,11 @@ const styles: Record<string, CSSProperties> = {
     gap: "8px",
     paddingTop: "6px",
     borderTop: "1px solid var(--border)",
+  },
+  generatedSectionStandalone: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
   },
   generatedHeader: {
     display: "flex",

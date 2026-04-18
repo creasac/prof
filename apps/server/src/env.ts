@@ -35,7 +35,8 @@ const rawEnvSchema = z.object({
   SOURCE_MATERIAL_MAX_COUNT: z.coerce.number().int().min(1).max(50).default(12),
   SOURCE_MATERIAL_MAX_PROMPT_CHARS: z.coerce.number().int().min(1000).max(100000).default(20000),
   SOURCE_MATERIAL_MAX_EXCERPT_CHARS: z.coerce.number().int().min(1000).max(50000).default(12000),
-  PDF_UPLOAD_MAX_BYTES: z.coerce.number().int().min(1024).max(50 * 1024 * 1024).default(15 * 1024 * 1024),
+  FILE_UPLOAD_MAX_BYTES: z.coerce.number().int().min(1024).max(50 * 1024 * 1024).optional(),
+  PDF_UPLOAD_MAX_BYTES: z.coerce.number().int().min(1024).max(50 * 1024 * 1024).optional(),
   URL2MD_API_BASE_URL: z.string().optional(),
   URL_IMPORT_MAX_URLS: z.coerce.number().int().min(0).max(5).default(2),
   URL_IMPORT_MAX_CHARS_PER_URL: z.coerce.number().int().min(500).max(50000).default(8000),
@@ -47,6 +48,7 @@ const rawEnvSchema = z.object({
   GOOGLE_CLOUD_PROJECT: z.string().optional(),
   GOOGLE_CLOUD_LOCATION: z.string().default("global"),
   REASONING_MODEL: z.string().default("gemini-3.1-pro-preview"),
+  ATTACHMENT_IMAGE_MODEL: z.string().default("gemini-2.5-flash"),
   COURSE_COVER_PROMPT_MODEL: z.string().default("gemini-2.5-flash"),
   COURSE_COVER_IMAGE_MODEL: z.string().default("gemini-2.5-flash-image"),
 });
@@ -55,6 +57,7 @@ const parsed = rawEnvSchema.parse(process.env);
 
 export const env = {
   ...parsed,
+  FILE_UPLOAD_MAX_BYTES: parsed.FILE_UPLOAD_MAX_BYTES ?? parsed.PDF_UPLOAD_MAX_BYTES ?? 15 * 1024 * 1024,
   DATABASE_URL: parsed.DATABASE_URL?.trim() || undefined,
   DB_HOST: parsed.DB_HOST?.trim() || undefined,
   DB_USER: parsed.DB_USER?.trim() || undefined,

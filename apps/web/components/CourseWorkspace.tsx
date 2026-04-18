@@ -350,7 +350,7 @@ export function CourseWorkspace({ username, courseSlug }: CourseWorkspaceProps) 
             title="Course Materials"
             materials={snapshot.sourceMaterials}
             resolveFileHref={(material) =>
-              material.kind === "pdf"
+              material.kind === "file"
                 ? buildCourseMaterialFileHref(course.ownerUsername, course.courseSlug, material.id)
                 : null
             }

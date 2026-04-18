@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 
+import { SOURCE_MATERIAL_FILE_INPUT_ACCEPT } from "../lib/source-materials";
 import { Icon, IconText, type IconName } from "./TutorUi";
 
 export type PromptComposerAttachment = {
   id: string;
   title: string;
+  label?: string;
   removable?: boolean;
   uploading?: boolean;
   invalid?: boolean;
@@ -17,12 +19,13 @@ type PromptComposerProps = {
   onGoalChange: (value: string) => void;
   onGenerate: () => void;
   onLive: () => void;
-  onAttachPdfFiles?: (files: File[]) => void;
+  onAttachFiles?: (files: File[]) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   onMute?: () => void;
   generateLabel?: string;
   liveLabel?: string;
   attachTitle?: string;
+  attachAccept?: string;
   muteLabel?: string;
   attachments?: PromptComposerAttachment[];
   attachBusy?: boolean;
@@ -46,12 +49,13 @@ export function PromptComposer({
   onGoalChange,
   onGenerate,
   onLive,
-  onAttachPdfFiles,
+  onAttachFiles,
   onRemoveAttachment,
   onMute,
   generateLabel = "Generate",
   liveLabel = "Live",
-  attachTitle = "pdf upload only",
+  attachTitle = "attach files",
+  attachAccept = SOURCE_MATERIAL_FILE_INPUT_ACCEPT,
   muteLabel = "Mute",
   attachments = [],
   attachBusy = false,
@@ -156,13 +160,13 @@ export function PromptComposer({
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/pdf,.pdf"
+              accept={attachAccept}
               multiple
               style={styles.hiddenInput}
               onChange={(event) => {
                 const files = Array.from(event.target.files ?? []);
                 if (files.length > 0) {
-                  onAttachPdfFiles?.(files);
+                  onAttachFiles?.(files);
                 }
                 event.currentTarget.value = "";
               }}
@@ -267,7 +271,7 @@ function AttachmentChip({
     >
       <span style={styles.attachmentChipContent}>
         <Icon name="file" size={15} />
-        <span style={styles.attachmentChipLabel}>PDF</span>
+        <span style={styles.attachmentChipLabel}>{attachment.label ?? "FILE"}</span>
       </span>
       {canRemove ? (
         <button

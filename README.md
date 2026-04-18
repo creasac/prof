@@ -28,6 +28,8 @@ AUTH_SECRET=replace-this-with-a-long-random-secret
 GEMINI_API_KEY=...
 ```
 
+Optional Google OAuth: set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
 3. Install dependencies:
 
 ```bash
@@ -109,6 +111,5 @@ The web app is configured for OpenNext on Cloudflare Workers. In production, the
 ## Docs
 
 - [docs/architecture.md](docs/architecture.md)
-- [docs/database.md](docs/database.md)
 - [docs/deploy-cloudflare-workers-cloud-run.md](docs/deploy-cloudflare-workers-cloud-run.md)
 - [integrations/elevenlabs/README.md](integrations/elevenlabs/README.md)

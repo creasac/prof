@@ -24,18 +24,18 @@ export async function attachUrlMaterial(sessionId: string, url: string): Promise
   return payload.material;
 }
 
-export async function uploadPdfMaterial(sessionId: string, file: File): Promise<SourceMaterial> {
+export async function uploadFileMaterial(sessionId: string, file: File): Promise<SourceMaterial> {
   const formData = new FormData();
   formData.append("file", file, file.name);
 
-  const response = await fetchApi(`/api/learn/sessions/${encodeURIComponent(sessionId)}/materials/pdf`, {
+  const response = await fetchApi(`/api/learn/sessions/${encodeURIComponent(sessionId)}/materials/file`, {
     method: "POST",
     body: formData,
   });
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? "Failed to upload PDF.");
+    throw new Error((body as { error?: string }).error ?? "Failed to upload file.");
   }
 
   const payload = sourceMaterialResponseSchema.parse(await response.json());

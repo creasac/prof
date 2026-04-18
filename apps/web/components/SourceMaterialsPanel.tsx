@@ -3,7 +3,11 @@
 import type { SourceMaterial } from "@prof/contracts";
 import type { CSSProperties } from "react";
 
-import { formatFileSize } from "../lib/source-materials";
+import {
+  formatFileSize,
+  getSourceMaterialKindLabel,
+  isSourceMaterialFile,
+} from "../lib/source-materials";
 import { IconText } from "./TutorUi";
 
 type SourceMaterialsPanelProps = {
@@ -43,8 +47,8 @@ export function SourceMaterialsPanel({
               <article key={material.id} style={styles.card}>
                 <div style={styles.cardHeader}>
                   <span style={styles.kindPill}>
-                    <IconText icon={material.kind === "pdf" ? "file" : "source"} size={13}>
-                      {material.kind.toUpperCase()}
+                    <IconText icon={material.kind === "url" ? "source" : "file"} size={13}>
+                      {getSourceMaterialKindLabel(material).toUpperCase()}
                     </IconText>
                   </span>
                   {href ? (
@@ -76,7 +80,10 @@ function buildMetaLabel(material: SourceMaterial) {
     return material.resolvedUrl ?? material.sourceUrl ?? "Saved URL";
   }
 
-  const parts = [material.fileName ?? "PDF"];
+  const parts = [material.fileName ?? getSourceMaterialKindLabel(material)];
+  if (isSourceMaterialFile(material) && material.mimeType) {
+    parts.push(material.mimeType);
+  }
   const sizeLabel = formatFileSize(material.sizeBytes);
   if (sizeLabel) {
     parts.push(sizeLabel);

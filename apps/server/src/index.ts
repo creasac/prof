@@ -84,11 +84,11 @@ import { getReasoningModelName, isReasoningEnabled } from "./providers/reasoning
 import { isSearchEnabled } from "./providers/search/index.js";
 import { importUrl } from "./providers/search/url-import.js";
 import { deleteR2Object, getR2Object, isR2Configured, putR2Object } from "./providers/storage/r2.js";
-import { extractPdfText, parseUploadedPdf } from "./source-material-upload.js";
+import { extractUploadedSourceFileContent, parseUploadedSourceFile } from "./source-material-upload.js";
 import {
-  buildPdfStoragePrefix,
-  buildPdfStorageKey,
-  createPdfSourceMaterial,
+  buildFileStoragePrefix,
+  buildFileStorageKey,
+  createFileSourceMaterial,
   createUrlSourceMaterial,
   findSourceMaterial,
 } from "./source-materials.js";
@@ -487,14 +487,17 @@ app.get("/api/courses/:username/:courseSlug/materials/:materialId/file", async (
     }
 
     const material = findSourceMaterial(courseRecord.snapshot.sourceMaterials ?? [], req.params.materialId);
-    if (!material || material.kind !== "pdf" || !material.storageKey) {
+    if (!material || material.kind !== "file" || !material.storageKey) {
       res.status(404).json({
-        error: "Attached PDF not found.",
+        error: "Attached file not found.",
       });
       return;
     }
 
-    await sendStoredPdfFile(res, material.storageKey, material.fileName);
+    await sendStoredFile(res, material.storageKey, {
+      contentType: material.mimeType || "application/octet-stream",
+      fileName: material.fileName || "attachment",
+    });
   } catch (error) {
     next(error);
   }
@@ -541,7 +544,12 @@ app.post("/api/learn/sessions/:sessionId/materials/url", async (req, res, next) 
   }
 });
 
-app.post("/api/learn/sessions/:sessionId/materials/pdf", async (req, res, next) => {
+const fileMaterialUploadPaths = [
+  "/api/learn/sessions/:sessionId/materials/file",
+  "/api/learn/sessions/:sessionId/materials/pdf",
+];
+
+app.post(fileMaterialUploadPaths, async (req, res, next) => {
   try {
     const authSession = await requireUserSession(req, res);
     if (!authSession) {
@@ -550,36 +558,37 @@ app.post("/api/learn/sessions/:sessionId/materials/pdf", async (req, res, next) 
 
     if (!isR2Configured()) {
       res.status(503).json({
-        error: "PDF uploads are not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET.",
+        error: "File uploads are not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET.",
       });
       return;
     }
 
-    const uploadedPdf = await parseUploadedPdf(req);
+    const uploadedFile = await parseUploadedSourceFile(req);
     const materialId = createPublicId(12);
-    const storageKey = buildPdfStorageKey({
+    const storageKey = buildFileStorageKey({
       userId: authSession.user.id,
       sessionId: req.params.sessionId,
       materialId,
-      fileName: uploadedPdf.fileName,
+      fileName: uploadedFile.fileName,
     });
 
     await putR2Object({
       key: storageKey,
-      body: uploadedPdf.buffer,
-      contentType: "application/pdf",
-      contentDisposition: `inline; filename="${escapeContentDispositionFilename(uploadedPdf.fileName)}"`,
+      body: uploadedFile.buffer,
+      contentType: uploadedFile.mimeType,
+      contentDisposition: buildStoredFileDisposition(uploadedFile.fileName, uploadedFile.mimeType),
     });
 
-    const extractedText = await extractPdfText(uploadedPdf.buffer);
-    const material = createPdfSourceMaterial({
+    const extractedContent = await extractUploadedSourceFileContent(uploadedFile);
+    const material = createFileSourceMaterial({
       id: materialId,
-      title: derivePdfTitle(uploadedPdf.fileName, extractedText),
-      fileName: uploadedPdf.fileName,
-      mimeType: uploadedPdf.mimeType,
-      sizeBytes: uploadedPdf.sizeBytes,
+      title: extractedContent.title,
+      fileKind: uploadedFile.fileKind,
+      fileName: uploadedFile.fileName,
+      mimeType: uploadedFile.mimeType,
+      sizeBytes: uploadedFile.sizeBytes,
       storageKey,
-      textExcerpt: extractedText,
+      textExcerpt: extractedContent.textExcerpt,
     });
 
     res.json(
@@ -608,7 +617,7 @@ app.delete("/api/learn/sessions/:sessionId/materials/:materialId", async (req, r
     const material = sessionRecord
       ? findSourceMaterial(sessionRecord.snapshot.sourceMaterials ?? [], req.params.materialId)
       : null;
-    const expectedStoragePrefix = `${buildPdfStoragePrefix({
+    const expectedStoragePrefix = `${buildFileStoragePrefix({
       userId: authSession.user.id,
       sessionId: req.params.sessionId,
     })}/`;
@@ -630,7 +639,7 @@ app.delete("/api/learn/sessions/:sessionId/materials/:materialId", async (req, r
     }
 
     const storageKeyToDelete =
-      material?.kind === "pdf" && material.storageKey ? material.storageKey : fallbackStorageKey;
+      material?.kind === "file" && material.storageKey ? material.storageKey : fallbackStorageKey;
 
     if (storageKeyToDelete && isR2Configured()) {
       await deleteR2Object(storageKeyToDelete);
@@ -672,14 +681,17 @@ app.get("/api/learn/sessions/:sessionId/materials/:materialId/file", async (req,
     }
 
     const material = findSourceMaterial(sessionRecord.snapshot.sourceMaterials ?? [], req.params.materialId);
-    if (!material || material.kind !== "pdf" || !material.storageKey) {
+    if (!material || material.kind !== "file" || !material.storageKey) {
       res.status(404).json({
-        error: "Attached PDF not found.",
+        error: "Attached file not found.",
       });
       return;
     }
 
-    await sendStoredPdfFile(res, material.storageKey, material.fileName);
+    await sendStoredFile(res, material.storageKey, {
+      contentType: material.mimeType || "application/octet-stream",
+      fileName: material.fileName || "attachment",
+    });
   } catch (error) {
     next(error);
   }
@@ -1338,6 +1350,7 @@ app.post("/api/reasoning/chat", async (req, res, next) => {
     const parsed = normalizeReasoningChatResponse(JSON.parse(response.text), {
       requestType: input.requestType,
       preferredBlockType: input.preferredBlockType,
+      allowLearnPanelUpdates: input.allowLearnPanelUpdates,
     });
 
     res.json({
@@ -1396,13 +1409,6 @@ function getSessionUsername(authSession: NonNullable<Awaited<ReturnType<typeof g
   return typeof username === "string" && username.trim() ? username.trim().toLowerCase() : null;
 }
 
-async function sendStoredPdfFile(res: express.Response, storageKey: string, fileName?: string) {
-  await sendStoredFile(res, storageKey, {
-    contentType: "application/pdf",
-    fileName: fileName || "document.pdf",
-  });
-}
-
 async function sendStoredFile(
   res: express.Response,
   storageKey: string,
@@ -1414,33 +1420,37 @@ async function sendStoredFile(
   const object = await getR2Object(storageKey);
 
   res.setHeader("Content-Type", object.contentType || options.contentType);
+  res.setHeader("X-Content-Type-Options", "nosniff");
   if (object.contentLength !== undefined) {
     res.setHeader("Content-Length", String(object.contentLength));
   }
   res.setHeader(
     "Content-Disposition",
     object.contentDisposition ||
-      `inline; filename="${escapeContentDispositionFilename(options.fileName)}"`,
+      buildStoredFileDisposition(options.fileName, object.contentType || options.contentType),
   );
   res.end(object.body);
 }
 
-function derivePdfTitle(fileName: string, extractedText: string) {
-  const firstLine = extractedText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean);
-
-  if (firstLine) {
-    return firstLine;
-  }
-
-  const withoutExtension = fileName.replace(/\.pdf$/i, "").trim();
-  return withoutExtension || "PDF attachment";
-}
-
 function escapeContentDispositionFilename(fileName: string) {
   return fileName.replace(/["\\\r\n]+/g, "_");
+}
+
+function buildStoredFileDisposition(fileName: string, mimeType: string) {
+  const directive = shouldServeFileInline(mimeType) ? "inline" : "attachment";
+  return `${directive}; filename="${escapeContentDispositionFilename(fileName)}"`;
+}
+
+function shouldServeFileInline(mimeType: string) {
+  const normalized = mimeType.trim().toLowerCase();
+  return (
+    normalized === "application/pdf" ||
+    normalized === "application/json" ||
+    normalized.startsWith("text/") ||
+    normalized === "image/png" ||
+    normalized === "image/jpeg" ||
+    normalized === "image/webp"
+  );
 }
 
 function writeNdjson(res: express.Response, value: unknown) {
