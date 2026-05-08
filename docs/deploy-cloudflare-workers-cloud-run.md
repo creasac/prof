@@ -16,10 +16,7 @@ This repo is set up for the simplest free public deployment path:
 
 - Production web builds now default API calls to same-origin `/api`.
 - `apps/web/app/api/[...path]/route.ts` proxies API traffic to `API_PROXY_TARGET`.
-- The backend now supports either:
-  - `DATABASE_URL`
-  - Cloud SQL Unix socket envs: `INSTANCE_CONNECTION_NAME`, `DB_USER`, `DB_PASS`, `DB_NAME`
-  - direct TCP envs: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME`
+- The backend uses `DATABASE_URL` for Postgres. Production is currently on Neon.
 - A root `Dockerfile` exists so Cloud Run source/GitHub deploys can build from repo root.
 
 ## Frontend deploy
@@ -70,30 +67,14 @@ AUTH_BASE_URL=https://prof.YOUR-SUBDOMAIN.workers.dev
 AUTH_SECRET=YOUR_SECRET
 ```
 
-Database options:
+Database config:
 
-Use a managed Postgres connection string. For Neon, use the pooled connection
-string for the app runtime.
+Use the pooled Neon connection string for the app runtime.
 
 ```bash
 DATABASE_URL=postgres://USER:PASSWORD@HOST/prof?sslmode=verify-full
 DATABASE_SSL=false
 ```
-
-The backend also supports Cloud SQL Unix socket envs for old deployments:
-
-```bash
-DB_USER=USER
-DB_PASS=PASSWORD
-DB_NAME=prof
-INSTANCE_CONNECTION_NAME=PROJECT:REGION:INSTANCE
-```
-
-When using Cloud SQL:
-
-- attach the Cloud SQL instance to the Cloud Run service
-- grant the Cloud Run service account the `Cloud SQL Client` role
-- keep Cloud Run and Cloud SQL in the same region when possible
 
 Other backend vars depend on which features you want enabled:
 
@@ -123,10 +104,11 @@ The frontend proxy forwards those requests to Cloud Run, and the browser stores 
 Run the production migration before public launch:
 
 ```bash
-npm run db:migrate
+DATABASE_URL="postgres://USER:PASSWORD@DIRECT_HOST/prof?sslmode=verify-full" DATABASE_SSL=false npm run db:migrate
 ```
 
-Run it in an environment that can reach the production database.
+Use the direct, non-pooled Neon connection string for migrations. Use the pooled
+Neon connection string for the deployed app runtime.
 
 ## Smoke test
 
@@ -148,7 +130,6 @@ The repo includes a production deploy workflow at `.github/workflows/deploy.yml`
 It runs on pushes to `master` and does:
 
 - backend deploy to Cloud Run using Google Workload Identity Federation
-- Cloud SQL attachment removal during backend deploy
 - frontend deploy to Cloudflare Workers using Wrangler
 
 Required GitHub repository variables:

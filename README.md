@@ -38,14 +38,30 @@ npm ci
 
 ## Database
 
-Choose one database setup.
+Production uses Neon Postgres. For local development, either point `.env` at
+Neon or run a local Postgres database.
+
+### Neon
+
+Use the pooled Neon connection string for app runtime:
+
+```bash
+DATABASE_URL=postgresql://USER:PASSWORD@HOST-pooler.REGION.aws.neon.tech/prof?sslmode=verify-full
+DATABASE_SSL=false
+```
+
+Use the direct, non-pooled Neon connection string when running migrations:
+
+```bash
+DATABASE_URL="postgresql://USER:PASSWORD@HOST.REGION.aws.neon.tech/prof?sslmode=verify-full" DATABASE_SSL=false npm run db:migrate
+```
 
 ### Local Postgres
 
-Use this for the simplest local setup.
+Use this if you want a fully local database instead of Neon:
 
 ```bash
-DATABASE_URL=postgres://USERNAME:PASSWORD@HOST:5432/prof
+DATABASE_URL=postgres://USERNAME:PASSWORD@127.0.0.1:5432/prof
 DATABASE_SSL=false
 ```
 
@@ -55,43 +71,14 @@ Create a database named `prof`, create an app user, then run:
 npm run db:migrate
 ```
 
-### Cloud SQL via proxy
-
-Use this when the database lives in Google Cloud but the app runs locally.
-
-1. Authenticate local Google credentials:
-
-```bash
-gcloud auth application-default login
-```
-
-2. Start the Cloud SQL Auth Proxy in a separate terminal:
-
-```bash
-./cloud-sql-proxy --port 5432 PROJECT_ID:REGION:INSTANCE_NAME
-```
-
-3. Point `.env` at the proxy:
-
-```bash
-DATABASE_URL=postgres://USERNAME:PASSWORD@127.0.0.1:5432/prof
-DATABASE_SSL=false
-```
-
-4. Run migrations:
-
-```bash
-npm run db:migrate
-```
-
-5. Start the backend and frontend in separate terminals:
+Start the backend and frontend in separate terminals:
 
 ```bash
 npm run dev:server
 npm run dev:web
 ```
 
-6. Open `http://localhost:3000`.
+Open `http://localhost:3000`.
 
 Voice, uploads, and some search flows need additional provider env vars from `.env.example`. The backend health endpoint is available at `http://localhost:8080/health`.
 

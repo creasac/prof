@@ -10,3 +10,4 @@ dist
 npm-debug.log*
 /.guide/
 gha-creds-*.json
+cloud-sql-proxy

@@ -130,7 +130,6 @@ jobs:
             --source . \
             --region "${{ vars.GCP_REGION }}" \
             --allow-unauthenticated \
-            --clear-cloudsql-instances \
             --env-vars-file /tmp/cloudrun-env.yaml \
             --quiet
 
