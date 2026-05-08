@@ -34,10 +34,7 @@ jobs:
       - name: Build Cloud Run env file
         env:
           FRONTEND_URL: ${{ vars.FRONTEND_URL }}
-          CLOUD_SQL_INSTANCE_CONNECTION_NAME: ${{ vars.CLOUD_SQL_INSTANCE_CONNECTION_NAME }}
           DATABASE_SSL: ${{ vars.DATABASE_SSL }}
-          DB_USER: ${{ vars.DB_USER }}
-          DB_NAME: ${{ vars.DB_NAME }}
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           VOICE_PROVIDER: ${{ vars.VOICE_PROVIDER }}
           SEARCH_PROVIDER: ${{ vars.SEARCH_PROVIDER }}
@@ -54,7 +51,7 @@ jobs:
           GOOGLE_CLOUD_LOCATION: ${{ vars.GOOGLE_CLOUD_LOCATION }}
           REASONING_MODEL: ${{ vars.REASONING_MODEL }}
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
-          DB_PASS: ${{ secrets.DB_PASS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           ELEVENLABS_AGENT_ID: ${{ secrets.ELEVENLABS_AGENT_ID }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
@@ -68,12 +65,9 @@ jobs:
           const env = process.env;
           const required = [
             "FRONTEND_URL",
-            "CLOUD_SQL_INSTANCE_CONNECTION_NAME",
+            "DATABASE_URL",
             "DATABASE_SSL",
-            "DB_USER",
-            "DB_NAME",
             "AUTH_SECRET",
-            "DB_PASS",
             "REASONING_MODEL",
           ];
 
@@ -87,11 +81,8 @@ jobs:
             NODE_ENV: "production",
             WEB_ORIGIN: env.FRONTEND_URL,
             AUTH_BASE_URL: env.FRONTEND_URL,
+            DATABASE_URL: env.DATABASE_URL,
             DATABASE_SSL: env.DATABASE_SSL,
-            DB_USER: env.DB_USER,
-            DB_PASS: env.DB_PASS,
-            DB_NAME: env.DB_NAME,
-            INSTANCE_CONNECTION_NAME: env.CLOUD_SQL_INSTANCE_CONNECTION_NAME,
             AUTH_SECRET: env.AUTH_SECRET,
           };
 
@@ -139,7 +130,7 @@ jobs:
             --source . \
             --region "${{ vars.GCP_REGION }}" \
             --allow-unauthenticated \
-            --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE_CONNECTION_NAME }}" \
+            --clear-cloudsql-instances \
             --env-vars-file /tmp/cloudrun-env.yaml \
             --quiet
 

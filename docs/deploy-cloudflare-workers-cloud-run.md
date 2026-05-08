@@ -72,14 +72,15 @@ AUTH_SECRET=YOUR_SECRET
 
 Database options:
 
-1. Single connection string
+Use a managed Postgres connection string. For Neon, use the pooled connection
+string for the app runtime.
 
 ```bash
-DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/prof
-DATABASE_SSL=true
+DATABASE_URL=postgres://USER:PASSWORD@HOST/prof?sslmode=verify-full
+DATABASE_SSL=false
 ```
 
-2. Cloud SQL attached to Cloud Run with Unix socket
+The backend also supports Cloud SQL Unix socket envs for old deployments:
 
 ```bash
 DB_USER=USER
@@ -147,6 +148,7 @@ The repo includes a production deploy workflow at `.github/workflows/deploy.yml`
 It runs on pushes to `master` and does:
 
 - backend deploy to Cloud Run using Google Workload Identity Federation
+- Cloud SQL attachment removal during backend deploy
 - frontend deploy to Cloudflare Workers using Wrangler
 
 Required GitHub repository variables:
@@ -157,12 +159,9 @@ Required GitHub repository variables:
 - `GCP_WORKLOAD_IDENTITY_PROVIDER`
 - `GCP_SERVICE_ACCOUNT`
 - `CLOUD_RUN_SERVICE`
-- `CLOUD_SQL_INSTANCE_CONNECTION_NAME`
 - `FRONTEND_URL`
 - `API_PROXY_TARGET`
 - `DATABASE_SSL`
-- `DB_USER`
-- `DB_NAME`
 - `GOOGLE_CLIENT_ID`
 - `VOICE_PROVIDER`
 - `SEARCH_PROVIDER`
@@ -184,7 +183,7 @@ Required GitHub repository secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `AUTH_SECRET`
-- `DB_PASS`
+- `DATABASE_URL`
 - `GOOGLE_CLIENT_SECRET`
 - `ELEVENLABS_AGENT_ID`
 - `ELEVENLABS_API_KEY`
