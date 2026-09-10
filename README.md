@@ -7,6 +7,8 @@ It combines:
 - chat and live tutoring flows
 - auth, persistence, and source-material uploads
 
+<img width="800" height="560" alt="icon" src="https://github.com/user-attachments/assets/83fef88d-e12e-40f2-959c-c61e7bf8b6e6" />
+
 ## Preview
 
 <img width="1813" height="860" alt="Screenshot from 2026-04-03 00-31-10" src="https://github.com/user-attachments/assets/d92f259c-c908-448d-86f4-99438f4d07a9" />
