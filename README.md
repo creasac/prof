@@ -7,6 +7,10 @@ It combines:
 - chat and live tutoring flows
 - auth, persistence, and source-material uploads
 
+## Preview
+
+<img width="1813" height="860" alt="Screenshot from 2026-04-03 00-31-10" src="https://github.com/user-attachments/assets/d92f259c-c908-448d-86f4-99438f4d07a9" />
+
 ## Stack
 
 - `apps/web`: Next.js 15 and React 19 frontend
