@@ -1,4 +1,9 @@
-# prof
+<h3 align="center">
+  <img src="https://github.com/user-attachments/assets/72d10c2c-6941-4697-8022-abc4b56d58e1" alt="" width="80" align="middle">
+</h3>
+<p align="center">knowledge liberates</p>
+
+---
 
 `prof` is an adaptive learning app that turns a goal and optional source material into structured study content and live tutoring.
 
